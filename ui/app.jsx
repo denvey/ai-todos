@@ -16,7 +16,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.3' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.5' }, {}, { autoResize: true }) : null;
 function applyDisplayName(locale) {
   const chinese = /^zh(?:-|$)/i.test(locale || navigator.language);
   document.title = chinese ? '任务 · 工作台' : 'Todos · Workspace';
@@ -44,8 +44,8 @@ async function openLocal(id) {
   if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error(`宿主未允许打开本地链接，请手动打开 ${url}`); }
   else window.open(url, '_blank', 'noopener');
 }
-async function openCodexSession(id) {
-  await api('codex', { operation: 'open_session', id });
+async function openCodexSession(id, prefillTask) {
+  await api('codex', { operation: 'open_session', id, ...(prefillTask ? { prefillTask } : {}) });
 }
 
 function EntityForm({ kind, entity = {}, parent, snapshot, busy, onSave, onDelete }) {
@@ -166,13 +166,13 @@ function Workspace() {
   });
   const prompt = id => run(async () => { const { task } = await api('task', { id }); open({ type: 'prompt', text: executionPrompt(task), returnTo: modalRef.current?.returnTo }); });
   const openCodex = task => run(async () => {
-    const { sessionId } = await api('codex', { operation: 'prepare_task_session', id: task.id, revision: task.revision });
+    const { sessionId, prefillTask } = await api('codex', { operation: 'prepare_task_session', id: task.id, revision: task.revision });
+    await openCodexSession(sessionId, prefillTask);
     await refresh(true);
     if (modalRef.current?.type === 'task' && modalRef.current.task?.id === task.id && !task.sessionId) {
       const detail = await api('task', { id: task.id });
       open({ type: 'task', ...detail, returnTo: modalRef.current.returnTo });
     }
-    await openCodexSession(sessionId);
   });
   const syncProjects = () => run(async () => {
     const result = await api('codex', { operation: 'sync_projects' });

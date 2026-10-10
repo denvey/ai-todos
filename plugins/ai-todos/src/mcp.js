@@ -36622,7 +36622,7 @@ var mcpPageSchema = external_exports.object({ data: external_exports.array(exter
 var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
   external_exports.object({ operation: external_exports.literal("prepare_task_session"), id: external_exports.string().uuid(), revision: external_exports.number().int().positive() }).strict(),
-  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid() }).strict(),
+  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid(), prefillTask: external_exports.boolean().optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
@@ -36634,6 +36634,40 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, mkdirSync, openSync, closeSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join as join3 } from "node:path";
+
+// package.json
+var package_default = {
+  name: "ai-todos",
+  version: "0.1.5",
+  private: true,
+  type: "module",
+  description: "Standalone local Codex productivity plugin",
+  engines: { node: ">=24.0.0" },
+  scripts: {
+    build: "node scripts/build.js",
+    start: "node src/server.js",
+    open: "node scripts/open.js",
+    stop: "node scripts/stop.js",
+    mcp: "node src/mcp.js",
+    check: "node --test test/*.test.js",
+    "package:plugin": "node scripts/package-plugin.js"
+  },
+  dependencies: {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@radix-ui/react-dialog": "1.1.19",
+    "@radix-ui/react-popover": "1.1.19",
+    "@radix-ui/react-select": "2.3.3",
+    "lucide-react": "0.525.0",
+    react: "19.1.1",
+    "react-day-picker": "9.14.0",
+    "react-dom": "19.1.1",
+    zod: "4.6.5"
+  },
+  devDependencies: { esbuild: "0.28.2" }
+};
+
+// src/service-client.js
 var runtime;
 async function connect() {
   try {
@@ -36641,6 +36675,12 @@ async function connect() {
     if (candidate.origin !== origin) throw new Error("Port does not match");
     const response = await fetch(`${origin}/internal/ping`, { headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(600) });
     if (response.ok) {
+      const health = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(600) }).then((response2) => response2.json());
+      if (health.name === "ai-todos" && typeof health.version === "string" && package_default.version.localeCompare(health.version, void 0, { numeric: true }) > 0) {
+        const stopped = await fetch(`${origin}/internal/stop`, { method: "POST", headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(1e3) });
+        if (!stopped.ok) throw new Error("\u65E7\u670D\u52A1\u505C\u6B62\u5931\u8D25");
+        return false;
+      }
       runtime = candidate;
       return true;
     }
@@ -36684,7 +36724,7 @@ async function service(path, value) {
 // src/mcp.js
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.4", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.5", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {

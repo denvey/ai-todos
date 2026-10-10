@@ -18,7 +18,7 @@ export function executionColumnForTask(task, runtime = task.ai) {
     if (runtime.mode === 'planning') {
       if (['waiting_approval', 'waiting_input'].includes(state)) return 'waiting_user';
       if (['queued', 'running'].includes(state)) return 'executing';
-      if (['idle', 'completed'].includes(state) && task.state === 'defining') return 'waiting_user';
+      if (['idle', 'completed'].includes(state) && task.state === 'defining' && (runtime.turnId || runtime.event === 'Stop')) return 'waiting_user';
     }
     if (['queued', 'running'].includes(state)) return 'executing';
     if (['waiting_approval', 'waiting_input', 'failed'].includes(state)) return 'waiting_user';

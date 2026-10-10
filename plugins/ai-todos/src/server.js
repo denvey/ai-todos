@@ -20185,16 +20185,16 @@ var mcpPageSchema = external_exports.object({ data: external_exports.array(exter
 var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
   external_exports.object({ operation: external_exports.literal("prepare_task_session"), id: external_exports.string().uuid(), revision: external_exports.number().int().positive() }).strict(),
-  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid() }).strict(),
+  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid(), prefillTask: external_exports.boolean().optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("capture_refine"), draft: draftSchema }).strict()
 ]);
-async function withCodex(action, timeout, shared = false, interactive = false) {
+async function withCodex(action, timeout, shared = false) {
   const cwd = await mkdtemp(join2(tmpdir(), "ai-todos-codex-"));
   const disabled = ["shell_tool", "unified_exec", "apps", "plugins", "hooks", "multi_agent", "multi_agent_v2", "computer_use", "browser_use", "image_generation", "view_image", "skill_search", "tool_suggest", "code_mode_host"];
-  const child = spawn("codex", shared ? ["app-server", "proxy"] : ["app-server", "--stdio", ...interactive ? [] : [...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"']], { cwd, stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawn("codex", shared ? ["app-server", "proxy"] : ["app-server", "--stdio", ...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"'], { cwd, stdio: ["pipe", "pipe", "ignore"] });
   const pending = /* @__PURE__ */ new Map();
   let sequence = 0, buffer = "", onNotification = () => {
   };
@@ -20243,7 +20243,7 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
   });
   try {
     return await Promise.race([failure2, (async () => {
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.4" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.5" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -20251,7 +20251,7 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
     })()]);
   } finally {
     clearTimeout(timer2);
-    child.stdin.destroy();
+    child.stdin.end();
     if (child.exitCode === null && child.signalCode === null) {
       await new Promise((resolve2) => {
         const force = setTimeout(() => child.kill("SIGKILL"), 1e3);
@@ -20259,7 +20259,6 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
           clearTimeout(force);
           resolve2();
         });
-        child.kill();
       });
     }
     await rm(cwd, { recursive: true, force: true });
@@ -20268,7 +20267,12 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
 var preparingTasks = /* @__PURE__ */ new Map();
 async function prepareTaskSession(store2, input2) {
   const task = store2.get("task", input2.id);
-  if (task.sessionId) return { sessionId: task.sessionId };
+  if (task.sessionId) {
+    return withCodex(async ({ request }) => {
+      const turns = await request("thread/turns/list", { threadId: task.sessionId, limit: 1, itemsView: "notLoaded" });
+      return { sessionId: task.sessionId, prefillTask: external_exports.array(external_exports.unknown()).parse(turns.data).length === 0 };
+    }, 1e4);
+  }
   store2.check(task, input2.revision);
   if (!["defining", "ready", "changes_requested"].includes(task.state)) throw new DomainError("\u5F53\u524D\u4EFB\u52A1\u4E0D\u53EF\u65B0\u5EFA\u4F1A\u8BDD\u3002");
   if (preparingTasks.has(task.id)) return preparingTasks.get(task.id);
@@ -20284,7 +20288,7 @@ async function prepareTaskSession(store2, input2) {
         await request("thread/inject_items", { threadId: created.id, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: context }] }] });
         await request("thread/name/set", { threadId: created.id, name: task.title });
         store2.check(store2.get("task", task.id), task.revision);
-        store2.syncCodexThreads([{ id: created.id, title: task.title, preview: context, cwd: created.cwd, projectId: created.projectId ?? null, updatedAt: new Date(created.updatedAt * 1e3).toISOString(), state: codexRuntimeState(created.status) }], false);
+        store2.syncCodexThreads([{ id: created.id, title: task.title, preview: "", cwd: created.cwd, projectId: created.projectId ?? null, updatedAt: new Date(created.updatedAt * 1e3).toISOString(), state: codexRuntimeState(created.status) }], false);
         store2.command({ action: "bind", id: task.id, revision: task.revision, sessionId: created.id });
       } catch (error62) {
         try {
@@ -20294,8 +20298,8 @@ async function prepareTaskSession(store2, input2) {
         }
         throw error62;
       }
-      return { sessionId: created.id };
-    }, 3e4, false, true);
+      return { sessionId: created.id, prefillTask: true };
+    }, 3e4);
   })();
   preparingTasks.set(task.id, pending);
   try {
@@ -20304,9 +20308,15 @@ async function prepareTaskSession(store2, input2) {
     preparingTasks.delete(task.id);
   }
 }
-async function openSession(store2, id2) {
+async function openSession(store2, id2, prefillTask) {
   if (!store2.sessions().some((session) => session.id === id2)) throw new DomainError("\u8BF7\u5148\u540C\u6B65 Codex \u4F1A\u8BDD\u3002");
-  const url2 = `codex://threads/${id2}`;
+  const link = new URL(`codex://threads/${id2}`);
+  if (prefillTask) {
+    const task = store2.all("task").find((task2) => task2.sessionId === id2 && task2.state !== "cancelled");
+    if (!task) throw new DomainError("\u4F1A\u8BDD\u672A\u5173\u8054\u4EFB\u52A1\u3002");
+    link.searchParams.set("prompt", taskSessionPrompt(task));
+  }
+  const url2 = link.toString();
   const [command, args] = process.platform === "darwin" ? ["open", [url2]] : process.platform === "win32" ? ["rundll32.exe", ["url.dll,FileProtocolHandler", url2]] : ["xdg-open", [url2]];
   try {
     await promisify(execFile)(command, args, { timeout: 1e4 });
@@ -20399,7 +20409,7 @@ async function refine2(draft, project, outputSchema, capture, field) {
 async function codexAction(store2, raw) {
   const input2 = codexActionSchema.parse(raw);
   if (input2.operation === "prepare_task_session") return prepareTaskSession(store2, input2);
-  if (input2.operation === "open_session") return openSession(store2, input2.id);
+  if (input2.operation === "open_session") return openSession(store2, input2.id, input2.prefillTask);
   if (input2.operation === "sync_projects") return store2.syncCodexProjects(await listProjects());
   if (input2.operation === "sync_threads") {
     const result = await listThreads();
@@ -20453,7 +20463,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u5730\u5740" });
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.4" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.5" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
       if (path === "/internal/ping") return send(res, 200, { ok: true });

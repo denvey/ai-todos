@@ -3,13 +3,22 @@ import { readFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { dataDir, runtimePath, origin } from './paths.js';
+import pkg from '../package.json' with { type: 'json' };
 let runtime;
 async function connect() {
   try {
     const candidate = JSON.parse(readFileSync(runtimePath, 'utf8'));
     if (candidate.origin !== origin) throw new Error('Port does not match');
     const response = await fetch(`${origin}/internal/ping`, { headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(600) });
-    if (response.ok) { runtime = candidate; return true; }
+    if (response.ok) {
+      const health = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(600) }).then(response => response.json());
+      if (health.name === 'ai-todos' && typeof health.version === 'string' && pkg.version.localeCompare(health.version, undefined, { numeric: true }) > 0) {
+        const stopped = await fetch(`${origin}/internal/stop`, { method: 'POST', headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(1000) });
+        if (!stopped.ok) throw new Error('旧服务停止失败');
+        return false;
+      }
+      runtime = candidate; return true;
+    }
   } catch {}
   return false;
 }

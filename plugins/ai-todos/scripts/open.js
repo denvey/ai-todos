@@ -19,6 +19,38 @@ var port = Number(process.env.AI_TODOS_PORT || 16943);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
 var origin = `http://127.0.0.1:${port}`;
 
+// package.json
+var package_default = {
+  name: "ai-todos",
+  version: "0.1.5",
+  private: true,
+  type: "module",
+  description: "Standalone local Codex productivity plugin",
+  engines: { node: ">=24.0.0" },
+  scripts: {
+    build: "node scripts/build.js",
+    start: "node src/server.js",
+    open: "node scripts/open.js",
+    stop: "node scripts/stop.js",
+    mcp: "node src/mcp.js",
+    check: "node --test test/*.test.js",
+    "package:plugin": "node scripts/package-plugin.js"
+  },
+  dependencies: {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@radix-ui/react-dialog": "1.1.19",
+    "@radix-ui/react-popover": "1.1.19",
+    "@radix-ui/react-select": "2.3.3",
+    "lucide-react": "0.525.0",
+    react: "19.1.1",
+    "react-day-picker": "9.14.0",
+    "react-dom": "19.1.1",
+    zod: "4.6.5"
+  },
+  devDependencies: { esbuild: "0.28.2" }
+};
+
 // src/service-client.js
 var runtime;
 async function connect() {
@@ -27,6 +59,12 @@ async function connect() {
     if (candidate.origin !== origin) throw new Error("Port does not match");
     const response = await fetch(`${origin}/internal/ping`, { headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(600) });
     if (response.ok) {
+      const health = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(600) }).then((response2) => response2.json());
+      if (health.name === "ai-todos" && typeof health.version === "string" && package_default.version.localeCompare(health.version, void 0, { numeric: true }) > 0) {
+        const stopped = await fetch(`${origin}/internal/stop`, { method: "POST", headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(1e3) });
+        if (!stopped.ok) throw new Error("\u65E7\u670D\u52A1\u505C\u6B62\u5931\u8D25");
+        return false;
+      }
       runtime = candidate;
       return true;
     }
