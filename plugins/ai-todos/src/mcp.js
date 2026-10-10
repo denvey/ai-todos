@@ -7199,7 +7199,7 @@ var require_dist = __commonJS({
   }
 });
 
-// src/mcp.js
+// src/mcp.ts
 import { readFileSync as readFileSync2 } from "node:fs";
 
 // node_modules/zod/v3/helpers/util.js
@@ -36556,7 +36556,7 @@ function G(B, Q, F, V, q) {
   return B.registerResource(Q, F, { mimeType: L, ...V }, q);
 }
 
-// src/domain.js
+// src/domain.ts
 import { DatabaseSync } from "node:sqlite";
 var text = external_exports.string().trim().min(1).max(300);
 var note = external_exports.string().max(2e4);
@@ -36599,10 +36599,10 @@ var commandSchema = external_exports.discriminatedUnion("action", [
 var reviewSchema = external_exports.object({ id, revision, decision: external_exports.enum(["accept", "reject"]), confirmed: external_exports.literal(true), reviewer: text, note: note.default("") }).strict();
 var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 
-// src/codex.js
+// src/codex.ts
 import { basename, isAbsolute, join as join2, normalize } from "node:path";
 
-// src/paths.js
+// src/paths.ts
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join(homedir(), ".ai-todos"));
@@ -36612,7 +36612,7 @@ var port = Number(process.env.AI_TODOS_PORT || 16943);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
 var origin = `http://127.0.0.1:${port}`;
 
-// src/codex.js
+// src/codex.ts
 var draftSchema = schemas.task.pick({ title: true, description: true, criteria: true, projectId: true });
 var suggestionSchema = schemas.task.pick({ description: true, criteria: true }).required();
 var definitionSuggestionSchema = schemas.task.pick({ title: true, description: true, criteria: true }).required();
@@ -36622,18 +36622,61 @@ var mcpPageSchema = external_exports.object({ data: external_exports.array(exter
 var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
   external_exports.object({ operation: external_exports.literal("prepare_task_session"), id: external_exports.string().uuid(), revision: external_exports.number().int().positive() }).strict(),
-  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid() }).strict(),
+  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid(), prefillTask: external_exports.boolean().optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("capture_refine"), draft: draftSchema }).strict()
 ]);
 
-// src/service-client.js
+// src/service-client.ts
 import { fileURLToPath } from "node:url";
 import { readFileSync, mkdirSync, openSync, closeSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join as join3 } from "node:path";
+
+// package.json
+var package_default = {
+  name: "ai-todos",
+  version: "0.1.5",
+  private: true,
+  type: "module",
+  description: "Standalone local Codex productivity plugin",
+  engines: {
+    node: ">=24.0.0"
+  },
+  scripts: {
+    build: "node scripts/build.ts",
+    start: "node src/server.ts",
+    open: "node scripts/open.ts",
+    stop: "node scripts/stop.ts",
+    mcp: "node src/mcp.ts",
+    check: "node --test test/*.test.js",
+    "package:plugin": "node scripts/package-plugin.ts",
+    typecheck: "tsc --noEmit"
+  },
+  dependencies: {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@radix-ui/react-dialog": "1.1.19",
+    "@radix-ui/react-popover": "1.1.19",
+    "@radix-ui/react-select": "2.3.3",
+    "lucide-react": "0.525.0",
+    react: "19.1.1",
+    "react-day-picker": "9.14.0",
+    "react-dom": "19.1.1",
+    zod: "4.6.5"
+  },
+  devDependencies: {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    esbuild: "0.28.2",
+    typescript: "7.0.2"
+  }
+};
+
+// src/service-client.ts
 var runtime;
 async function connect() {
   try {
@@ -36641,6 +36684,12 @@ async function connect() {
     if (candidate.origin !== origin) throw new Error("Port does not match");
     const response = await fetch(`${origin}/internal/ping`, { headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(600) });
     if (response.ok) {
+      const health = await fetch(`${origin}/health`, { signal: AbortSignal.timeout(600) }).then((response2) => response2.json());
+      if (health.name === "ai-todos" && typeof health.version === "string" && package_default.version.localeCompare(health.version, void 0, { numeric: true }) > 0) {
+        const stopped = await fetch(`${origin}/internal/stop`, { method: "POST", headers: { authorization: `Bearer ${candidate.token}` }, signal: AbortSignal.timeout(1e3) });
+        if (!stopped.ok) throw new Error("\u65E7\u670D\u52A1\u505C\u6B62\u5931\u8D25");
+        return false;
+      }
       runtime = candidate;
       return true;
     }
@@ -36652,7 +36701,7 @@ async function ensureService() {
   if (await connect()) return runtime;
   mkdirSync(dataDir, { recursive: true, mode: 448 });
   const log = openSync(join3(dataDir, "service.log"), "a", 384);
-  const child = spawn(process.execPath, [fileURLToPath(new URL("../src/server.js", import.meta.url))], { detached: true, stdio: ["ignore", log, log], env: process.env });
+  const child = spawn(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith(".ts") ? "../src/server.ts" : "../src/server.js", import.meta.url))], { detached: true, stdio: ["ignore", log, log], env: process.env });
   child.on("error", () => {
   });
   child.unref();
@@ -36681,27 +36730,28 @@ async function service(path, value) {
   return result2;
 }
 
-// src/mcp.js
+// src/mcp.ts
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.4", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.5", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
   try {
     return result(await fn(args));
   } catch (error62) {
-    return { isError: true, content: [{ type: "text", text: error62.message }] };
+    return { isError: true, content: [{ type: "text", text: error62 instanceof Error ? error62.message : String(error62) }] };
   }
 };
-j(server, "ai_todos_open", {
+var openToolConfig = {
   icons,
   title: "\u4EFB\u52A1",
   description: "Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.",
   inputSchema: external_exports.object({}),
   annotations: { readOnlyHint: true, openWorldHint: false },
   _meta: { ui: { resourceUri: uri }, "openai/ui": { entrypoints: [{ type: "global" }, { type: "thread" }] } }
-}, guarded(async () => ({ ...await service("state"), browserUrl: origin })));
+};
+j(server, "ai_todos_open", openToolConfig, guarded(async () => ({ ...await service("state"), browserUrl: origin })));
 server.registerTool("ai_todos_snapshot", { description: "Read persistent tasks, inbox captures, projects, OKRs, plans, trusted hook sessions, focus and reminders. Set syncThreads=true to refresh the official existing-session catalog before reading, for binding a host-created conversation. This does not create or execute conversations. Observed AI state is independent of task business state.", inputSchema: external_exports.object({ syncThreads: external_exports.boolean().optional() }), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ["model", "app"] } } }, guarded(async (args) => {
   if (args.syncThreads) await service("codex", { operation: "sync_threads" });
   return service("state");
@@ -36719,7 +36769,7 @@ G(server, "ai-todos workspace", uri, { description: "Persistent local productivi
 var transport = new StdioServerTransport();
 var send = transport.send.bind(transport);
 transport.send = (message) => {
-  const tool = message.result?.tools?.find((tool2) => tool2.name === "ai_todos_open");
+  const tool = "result" in message ? message.result.tools?.find((tool2) => tool2.name === "ai_todos_open") : void 0;
   if (tool) tool.icons = icons;
   return send(message);
 };

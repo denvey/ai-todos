@@ -1,8 +1,9 @@
 // Adapted from Xinmo Desktop FocusCard.tsx; ai-todos tracks elapsed time, not pomodoro phases.
+import type { Focus, Task } from '../../src/types.ts';
 import { Pause, Play, Plus, Square } from 'lucide-react';
-import { clock, hours } from '../format.js';
+import { clock, hours } from '../format.ts';
 
-export function FocusCard({ focus, busy, task, elapsedMs, onStart, onPause, onResume, onEnd, onNeedTask }) {
+export function FocusCard({ focus, busy, task, elapsedMs, onStart, onPause, onResume, onEnd, onNeedTask }: { focus: Focus; busy: boolean; task?: Task; elapsedMs: number; onStart: () => void; onPause: () => void; onResume: () => void; onEnd: () => void; onNeedTask: () => void }) {
   const idle = focus.status === 'idle';
   const Icon = idle ? (task ? Play : Plus) : focus.status === 'running' ? Pause : Play;
   const label = idle ? (task ? '开始专注' : '添加任务') : focus.status === 'running' ? '暂停专注' : '继续专注';

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
+import { createServer as createHttpServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { spawnSync } from 'node:child_process';
@@ -21,8 +22,19 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (message.id !== undefined) console.log(JSON.stringify({ id: message.id, result: message.method === 'thread/list' ? { data: [${JSON.stringify(thread)}], nextCursor: null } : {} }));
 });\n`, { mode: 0o755 });
   const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, AI_TODOS_DATA_DIR: dir, AI_TODOS_PORT: String(port) };
+  const oldToken = randomUUID(); let oldStopped = false;
+  const oldService = createHttpServer((req, res) => {
+    if (req.url === '/health') { res.end(JSON.stringify({ name: 'ai-todos', version: '0.1.3' })); return; }
+    if (req.headers.authorization !== `Bearer ${oldToken}`) { res.writeHead(401); res.end(); return; }
+    if (req.url === '/internal/ping') { res.end(JSON.stringify({ ok: true })); return; }
+    if (req.url === '/internal/stop') { oldStopped = true; res.setHeader('connection', 'close'); res.end(JSON.stringify({ ok: true })); oldService.close(); oldService.closeIdleConnections(); return; }
+    res.writeHead(404); res.end();
+  });
+  await new Promise(resolve => oldService.listen(port, '127.0.0.1', resolve));
+  t.after(() => oldService.close());
+  writeFileSync(join(dir, 'runtime.json'), JSON.stringify({ origin, token: oldToken }));
   const client = new Client({ name: 'integration-check', version: '1' });
-  const transport = new StdioClientTransport({ command: process.execPath, args: [resolve('src/mcp.js')], env, stderr: 'pipe' });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [resolve('src/mcp.ts')], env, stderr: 'pipe' });
   let stderr = ''; transport.stderr?.on('data', d => { stderr += d; });
   t.after(async () => {
     await client.close();
@@ -30,6 +42,8 @@ createInterface({ input: process.stdin }).on('line', line => {
     await new Promise(r => setTimeout(r, 100)); rmSync(dir, { recursive: true, force: true });
   });
   await client.connect(transport);
+  assert.equal(oldStopped, true);
+  assert.equal((await fetch(`${origin}/health`).then(response => response.json())).version, JSON.parse(readFileSync('package.json', 'utf8')).version);
   const tools = await client.listTools(); assert.equal(tools.tools.length, 6);
   assert.equal(tools.tools.find(tool => tool.name === 'ai_todos_snapshot').inputSchema.properties.syncThreads.type, 'boolean');
   assert.deepEqual(tools.tools.find(tool => tool.name === 'ai_todos_confirm_session')._meta.ui.visibility, ['app']);
@@ -46,11 +60,11 @@ createInterface({ input: process.stdin }).on('line', line => {
   const synced = await client.callTool({ name: 'ai_todos_snapshot', arguments: { syncThreads: true } });
   assert.ok(!synced.isError, synced.content?.[0]?.text);
   assert.equal(synced.structuredContent.sessions.find(session => session.id === sessionId).title, thread.name);
-  const hook = spawnSync(process.execPath, ['hooks/observe.js'], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: 'UserPromptSubmit', cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
+  const hook = spawnSync(process.execPath, ['hooks/observe.ts'], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: 'UserPromptSubmit', cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
   assert.equal(hook.status, 0); assert.ok(JSON.parse(hook.stdout).hookSpecificOutput.additionalContext.includes(sessionId));
   assert.ok(!JSON.parse(hook.stdout).hookSpecificOutput.additionalContext.includes(task.id));
   task = await command({ action: 'bind', id: task.id, revision: task.revision, sessionId });
-  for (const path of ['hooks/observe.js', 'plugins/ai-todos/hooks/observe.js']) {
+  for (const path of ['hooks/observe.ts', 'plugins/ai-todos/hooks/observe.js']) {
     for (const event of ['SessionStart', 'UserPromptSubmit']) {
       const boundHook = spawnSync(process.execPath, [path], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: event, cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
       assert.equal(boundHook.status, 0);

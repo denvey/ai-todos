@@ -1,5 +1,5 @@
-import { Store } from '../src/domain.js';
-import { dbPath } from '../src/paths.js';
+import { Store } from '../src/domain.ts';
+import { dbPath } from '../src/paths.ts';
 let input = '';
 for await (const chunk of process.stdin) { input += chunk; if (input.length > 1000000) process.exit(0); }
 try {
@@ -18,4 +18,4 @@ try {
     }
     process.stdout.write(JSON.stringify(output));
   } finally { store.close(); }
-} catch (error) { process.stderr.write(`ai-todos hook: ${error.message}\n`); }
+} catch (error) { process.stderr.write(`ai-todos hook: ${error instanceof Error ? error.message : String(error)}\n`); }

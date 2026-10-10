@@ -404,6 +404,10 @@
 .execution-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .execution-card__summary { min-width: 0; display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .execution-card__title { flex: 1; min-width: 0; text-align: left; }
+.execution-task-card { position: relative; }
+.execution-task-card .execution-card__title::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.execution-task-card .execution-card__expand, .execution-task-card .execution-card__actions button { position: relative; z-index: 1; }
+.execution-task-card:has(.execution-card__title:focus-visible) { outline: 2px solid var(--blue); outline-offset: 1px; }
 .execution-card__title, .execution-card__expand { padding: 0; border: 0; background: transparent; color: inherit; }
 .execution-card__title > strong, .execution-card__summary > strong { flex: 1; min-width: 0; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .execution-card__expand > svg, .execution-card__summary > svg { flex: none; margin-top: 2px; color: var(--faint); transition: transform 140ms ease-out; }

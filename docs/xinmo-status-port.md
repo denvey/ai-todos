@@ -1,6 +1,6 @@
 # 心魔状态迁移对照
 
-来源：Xinmo Desktop 的 `src/lib/execution-board.ts`、`src/views/ExecutionView.tsx` 和 `src/types.ts`。迁移后的共享归类函数位于 `ui/execution-board.js`，运行状态与文案位于 `src/runtime.js`。适配本地字段：`workflowState → task.state`、`runtimeForTask → task.ai`、`sessionId → session.id`；不持久化看板列。
+来源：Xinmo Desktop 的 `src/lib/execution-board.ts`、`src/views/ExecutionView.tsx` 和 `src/types.ts`。迁移后的共享归类函数位于 `ui/execution-board.ts`，运行状态与文案位于 `src/runtime.ts`。适配本地字段：`workflowState → task.state`、`runtimeForTask → task.ai`、`sessionId → session.id`；不持久化看板列。
 
 ## 任务阶段
 

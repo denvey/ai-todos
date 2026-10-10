@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Store } from '../src/domain.js';
+import { Store } from '../src/domain.ts';
 
 test('prepare binds once before opening; conflicts archive; creation never starts a turn', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ai-todos-codex-check-'));
@@ -15,19 +15,19 @@ test('prepare binds once before opening; conflicts archive; creation never start
   const log = join(dir, 'requests.jsonl'), opened = join(dir, 'opened.json');
   writeFileSync(join(dir, 'codex'), `#!${process.execPath}
 import { createInterface } from 'node:readline';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 createInterface({ input: process.stdin }).on('line', line => {
   const message = JSON.parse(line);
   appendFileSync(${JSON.stringify(log)}, JSON.stringify(message) + '\\n');
   if (message.id === undefined) return;
-  const result = message.method === 'thread/start' ? { thread: { id: randomUUID(), preview: '', cwd: message.params.cwd, ephemeral: false, updatedAt: 1791659803, status: { type: 'idle' } } } : {};
+  const result = message.method === 'thread/start' ? { thread: { id: randomUUID(), preview: '', cwd: message.params.cwd, ephemeral: false, updatedAt: 1791659803, status: { type: 'idle' } } } : message.method === 'thread/turns/list' ? { data: existsSync(${JSON.stringify(join(dir, 'turns-present'))}) ? [{ id: 'real-turn' }] : [] } : {};
   setTimeout(() => console.log(JSON.stringify({ id: message.id, result })), message.method === 'thread/start' ? 80 : 0);
 });
 `, { mode: 0o755 });
   const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32.exe' : 'xdg-open';
   writeFileSync(join(dir, opener), `#!${process.execPath}\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(opened)}, JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
-  const { codexAction } = await import('../src/codex.js');
+  const { codexAction } = await import('../src/codex.ts');
   const task = store.create('task', { title: '原任务', criteria: '原标准' });
   const prior = randomUUID(); store.syncCodexThreads([{ id: prior, title: '其他会话', preview: '', cwd: dir, updatedAt: '2026-10-10T00:00:00Z', state: 'idle' }]);
   const action = { operation: 'prepare_task_session', id: task.id, revision: task.revision };
@@ -37,8 +37,13 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.equal(store.get('task', task.id).state, 'defining');
   assert.equal(store.sessions().find(session => session.id === prior).catalogVisible, true);
   assert.deepEqual(await codexAction(store, action), first);
+  assert.equal(first.prefillTask, true);
   await codexAction(store, { operation: 'open_session', id: first.sessionId });
   assert.ok(JSON.parse(readFileSync(opened, 'utf8')).includes(`codex://threads/${first.sessionId}`));
+  await codexAction(store, { operation: 'open_session', id: first.sessionId, prefillTask: true });
+  const link = new URL(JSON.parse(readFileSync(opened, 'utf8')).find(value => value.startsWith('codex://')));
+  assert.equal(link.searchParams.get('prompt'), '# 原任务\n\n## 任务内容\n未填写\n\n## 验收标准\n原标准');
+  await assert.rejects(codexAction(store, { operation: 'open_session', id: prior, prefillTask: true }), /未关联任务/);
   await assert.rejects(codexAction(store, { operation: 'open_session', id: randomUUID() }), /请先同步/);
   const stale = store.create('task', { title: '旧版本' });
   store.update('task', stale, { title: '新版本' });
@@ -48,6 +53,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   store.update('task', racing, { title: '保留编辑' });
   await assert.rejects(pending, /数据已更新/);
   assert.equal(store.get('task', racing.id).sessionId, null);
+  writeFileSync(join(dir, 'turns-present'), 'yes');
+  assert.deepEqual(await codexAction(store, action), { sessionId: first.sessionId, prefillTask: false });
   const messages = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(messages.filter(message => message.method === 'thread/start').length, 2);
   assert.equal(messages.filter(message => message.method === 'thread/archive').length, 1);

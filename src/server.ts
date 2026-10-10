@@ -1,15 +1,16 @@
+import type { IncomingMessage, ServerResponse, OutgoingHttpHeaders } from 'node:http';
 import { createServer } from 'node:http';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
-import { Store } from './domain.js';
-import { codexAction } from './codex.js';
-import { dbPath, dataDir, runtimePath, port, origin } from './paths.js';
+import { Store } from './domain.ts';
+import { codexAction } from './codex.ts';
+import { dbPath, dataDir, runtimePath, port, origin } from './paths.ts';
 
 const store = new Store(dbPath);
 chmodSync(dbPath, 0o600);
 const token = randomBytes(32).toString('hex');
-const sessions = new Map();
-const reviews = new Map();
+const sessions = new Map<string, { csrf: string; expires: number }>();
+const reviews = new Map<string, { cookieId: string; id: string; revision: number; expires: number }>();
 let html;
 try { html = readFileSync(new URL('../dist/app.html', import.meta.url), 'utf8').replaceAll('__AI_TODOS_ORIGIN__', origin); }
 catch { throw new Error('UI missing. Run npm run build before starting ai-todos.'); }
@@ -19,12 +20,12 @@ const security = {
   'Content-Security-Policy': `default-src 'none'; script-src 'sha256-${scriptHash}'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
   'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store',
 };
-function send(res, status, value, headers = {}) {
+function send(res: ServerResponse, status: number, value: unknown, headers: OutgoingHttpHeaders = {}) {
   res.writeHead(status, { ...security, 'Content-Type': typeof value === 'string' ? 'text/html; charset=utf-8' : 'application/json', ...headers });
   res.end(typeof value === 'string' ? value : JSON.stringify(value));
 }
-function same(a, b) { return typeof a === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b)); }
-async function body(req) {
+function same(a: unknown, b: string) { return typeof a === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b)); }
+async function body(req: IncomingMessage) {
   const chunks = []; let size = 0;
   for await (const chunk of req) { size += chunk.length; if (size > 128000) throw Object.assign(new Error('请求过大'), { status: 413 }); chunks.push(chunk); }
   if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('需要 JSON 请求'), { status: 415 });
@@ -33,8 +34,8 @@ async function body(req) {
 const server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: '仅允许本机回环地址' });
-    const path = new URL(req.url, origin).pathname;
-    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.4' });
+    const path = new URL(req.url!, origin).pathname;
+    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.5' });
     if (path.startsWith('/internal/')) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: 'Unauthorized' });
       if (path === '/internal/ping') return send(res, 200, { ok: true });
@@ -56,7 +57,7 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/favicon.ico') return send(res, 204, '');
     const cookieId = req.headers.cookie?.match(/(?:^|;\s*)ai_todos=([a-f0-9]+)(?:;|$)/)?.[1];
-    const session = sessions.get(cookieId);
+    const session = sessions.get(cookieId ?? '');
     if (!session || session.expires < Date.now()) return send(res, 401, { error: '请重新打开 ai-todos' });
     if (req.method === 'POST' && (req.headers.origin !== origin || !same(req.headers['x-csrf-token'], session.csrf))) return send(res, 403, { error: '无效的界面请求' });
     if (path === '/api/state' && req.method === 'GET') return send(res, 200, { ...store.snapshot(), csrf: session.csrf });
@@ -70,7 +71,7 @@ const server = createServer(async (req, res) => {
       const { id, revision } = await body(req); const task = store.get('task', id); store.check(task, revision);
       if (task.state !== 'awaiting_acceptance') return send(res, 400, { error: '任务尚未提交交付' });
       const ticket = randomBytes(24).toString('hex');
-      reviews.set(ticket, { cookieId, id, revision, expires: Date.now() + 1800000 });
+      reviews.set(ticket, { cookieId: cookieId!, id, revision, expires: Date.now() + 1800000 });
       return send(res, 200, { ticket, task });
     }
     if (path === '/api/review' && req.method === 'POST') {
@@ -81,10 +82,10 @@ const server = createServer(async (req, res) => {
       return send(res, 200, result);
     }
     return send(res, 404, { error: 'Not found' });
-  } catch (error) { send(res, error.status || 400, { error: error.message }); }
+  } catch (error) { send(res, error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : 400, { error: error instanceof Error ? error.message : String(error) }); }
 });
 const timer = setInterval(() => {
-  try { store.tick(); } catch (error) { console.error('Reminder scheduler:', error.message); }
+  try { store.tick(); } catch (error) { console.error('Reminder scheduler:', error instanceof Error ? error.message : String(error)); }
   for (const [key, value] of sessions) if (value.expires < Date.now()) sessions.delete(key);
   for (const [key, value] of reviews) if (value.expires < Date.now()) reviews.delete(key);
 }, 15000);

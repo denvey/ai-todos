@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Store } from '../src/domain.js';
-import { executionColumnForTask, taskStatus, visibleExecutionSessions } from '../ui/execution-board.js';
+import { Store } from '../src/domain.ts';
+import { executionColumnForTask, taskStatus, visibleExecutionSessions } from '../ui/execution-board.ts';
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-todos-domain-')); let now = Date.parse('2026-10-10T00:00:00Z');
   const store = new Store(join(dir, 'data.sqlite'), () => now);

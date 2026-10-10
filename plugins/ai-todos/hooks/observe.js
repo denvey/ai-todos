@@ -5,7 +5,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/domain.js
+// src/domain.ts
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -19679,12 +19679,12 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// src/runtime.js
+// src/runtime.ts
 function runtimeState(state) {
-  return { waiting: "waiting_approval", ended: "completed" }[state] || state || "unknown";
+  return { waiting: "waiting_approval", ended: "completed" }[state ?? ""] || state || "unknown";
 }
 
-// src/domain.js
+// src/domain.ts
 var text = external_exports.string().trim().min(1).max(300);
 var note = external_exports.string().max(2e4);
 var id = external_exports.string().uuid();
@@ -19838,16 +19838,19 @@ var Store = class {
       if (data.plannedStart) requireThat(Date.parse(data.plannedEnd) > Date.parse(data.plannedStart), "\u7ED3\u675F\u65F6\u95F4\u5FC5\u987B\u665A\u4E8E\u5F00\u59CB\u65F6\u95F4");
     }
     if (kind === "task") {
-      if (data.projectId) this.get("project", data.projectId);
-      if (data.keyResultId) this.get("keyResult", data.keyResultId);
+      const task = data;
+      if (task.projectId) this.get("project", task.projectId);
+      if (task.keyResultId) this.get("keyResult", task.keyResultId);
     }
     if (kind === "keyResult") {
-      this.get("objective", data.objectiveId);
-      requireThat(data.target !== data.baseline, "KR \u76EE\u6807\u503C\u5FC5\u987B\u4E0E\u8D77\u59CB\u503C\u4E0D\u540C");
+      const result = data;
+      this.get("objective", result.objectiveId);
+      requireThat(result.target !== result.baseline, "KR \u76EE\u6807\u503C\u5FC5\u987B\u4E0E\u8D77\u59CB\u503C\u4E0D\u540C");
     }
     if (kind === "plan") {
-      requireThat(new Set(data.taskIds).size === data.taskIds.length, "\u8BA1\u5212\u4E2D\u4E0D\u80FD\u91CD\u590D\u6DFB\u52A0\u4EFB\u52A1");
-      data.taskIds.forEach((taskId) => this.get("task", taskId));
+      const plan = data;
+      requireThat(new Set(plan.taskIds).size === plan.taskIds.length, "\u8BA1\u5212\u4E2D\u4E0D\u80FD\u91CD\u590D\u6DFB\u52A0\u4EFB\u52A1");
+      plan.taskIds.forEach((taskId) => this.get("task", taskId));
     }
     return data;
   }
@@ -19925,7 +19928,7 @@ var Store = class {
   command(raw, authority = "model") {
     const c = commandSchema.parse(raw);
     return this.transaction(() => {
-      if (["create", "create_tasks", "promote"].includes(c.action)) {
+      if (c.action === "create" || c.action === "create_tasks" || c.action === "promote") {
         if (c.action === "create") requireThat(!c.planDate || c.kind === "task", "\u53EA\u6709\u4EFB\u52A1\u53EF\u4EE5\u52A0\u5165\u4ECA\u65E5\u8BA1\u5212");
         const previous = this.db.prepare("SELECT body FROM requests WHERE id=?").get(c.requestId);
         const fingerprint = JSON.stringify(c.action === "create" ? { kind: c.kind, data: c.data, ...c.planDate ? { planDate: c.planDate } : {} } : { ...c, requestId: void 0 });
@@ -19963,7 +19966,7 @@ var Store = class {
       if (c.action === "update") {
         const item = this.get(c.kind, c.id);
         this.check(item, c.revision);
-        if (item.codex && "title" in c.data) requireThat(c.data.title === item.title, "\u9879\u76EE\u540D\u79F0\u7531 Codex \u7EF4\u62A4\uFF0C\u8BF7\u5728 Codex \u4E2D\u4FEE\u6539\u540E\u540C\u6B65\u3002");
+        if ("codex" in item && item.codex && "title" in c.data) requireThat(c.data.title === item.title, "\u9879\u76EE\u540D\u79F0\u7531 Codex \u7EF4\u62A4\uFF0C\u8BF7\u5728 Codex \u4E2D\u4FEE\u6539\u540E\u540C\u6B65\u3002");
         return this.update(c.kind, item, c.data);
       }
       if (c.action === "delete") {
@@ -20134,7 +20137,7 @@ var Store = class {
   }
 };
 
-// src/paths.js
+// src/paths.ts
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join(homedir(), ".ai-todos"));
@@ -20144,7 +20147,7 @@ var port = Number(process.env.AI_TODOS_PORT || 16943);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
 var origin = `http://127.0.0.1:${port}`;
 
-// hooks/observe.js
+// hooks/observe.ts
 var input2 = "";
 for await (const chunk of process.stdin) {
   input2 += chunk;
@@ -20167,6 +20170,6 @@ try {
     store.close();
   }
 } catch (error62) {
-  process.stderr.write(`ai-todos hook: ${error62.message}
+  process.stderr.write(`ai-todos hook: ${error62 instanceof Error ? error62.message : String(error62)}
 `);
 }

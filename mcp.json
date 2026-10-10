@@ -4,7 +4,7 @@
     "ai-todos": {
       "type": "stdio",
       "command": "node",
-      "args": ["${PLUGIN_ROOT}/src/mcp.js"]
+      "args": ["${PLUGIN_ROOT}/src/mcp.ts"]
     }
   }
 }

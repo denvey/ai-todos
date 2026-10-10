@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { ensureService } from '../src/service-client.js';
+import { ensureService } from '../src/service-client.ts';
 const { origin } = await ensureService();
 console.log(origin);
 const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open';

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Store, commandSchema } from '../src/domain.js';
+import { Store, commandSchema } from '../src/domain.ts';
 
 test('human session confirmation checks the displayed version and binding, and clears on activity', t => {
   const dir = mkdtempSync(join(tmpdir(), 'ai-todos-confirm-'));

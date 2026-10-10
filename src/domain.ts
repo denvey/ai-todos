@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { runtimeState } from './runtime.js';
+import type { Kind, EntityData, Entity, Task, Focus, Settings, Session, LiveSession, Snapshot, TimeRecord, TaskEvent, CodexProject, CodexThread, Command } from './types.ts';
+import { runtimeState } from './runtime.ts';
 
 const text = z.string().trim().min(1).max(300);
 const note = z.string().max(20000);
@@ -19,7 +20,7 @@ export const schemas = {
   plan: z.object({ title: text, date: z.iso.date(), note: note.default(''), taskIds: z.array(id).max(500).default([]) }).strict(),
   inbox: z.object({ title: text, archived: z.boolean().default(false) }).strict(),
 };
-const kinds = z.enum(Object.keys(schemas));
+const kinds = z.enum(Object.keys(schemas) as [Kind, ...Kind[]]);
 const revision = z.number().int().positive();
 export const settingsSchema = z.object({ reminders: z.boolean(), followUpMinutes: z.number().int().min(0).max(10080), reviewTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), timezone: z.string().refine(v => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } }, 'Invalid timezone') }).strict();
 export const commandSchema = z.discriminatedUnion('action', [
@@ -39,15 +40,18 @@ export const commandSchema = z.discriminatedUnion('action', [
 const reviewSchema = z.object({ id, revision, decision: z.enum(['accept', 'reject']), confirmed: z.literal(true), reviewer: text, note: note.default('') }).strict();
 export const sessionConfirmSchema = z.object({ id, observedAt: date, event: z.string().min(1).max(200), turnId: z.string().max(200).nullable(), catalogUpdatedAt: date.nullable(), confirmed: z.literal(true) }).strict();
 export class DomainError extends Error {
-  constructor(message, status = 400) { super(message); this.status = status; }
+  declare status: number;
+  constructor(message: string, status = 400) { super(message); this.status = status; }
 }
-function requireThat(condition, message, status = 400) { if (!condition) throw new DomainError(message, status); }
-export function elapsed(focus, now = Date.now()) {
+function requireThat(condition: unknown, message: string, status = 400): asserts condition { if (!condition) throw new DomainError(message, status); }
+export function elapsed(focus: Focus, now = Date.now()) {
   return focus.elapsedMs + (focus.startedAt ? Math.max(0, now - Date.parse(focus.startedAt)) : 0);
 }
 
 export class Store {
-  constructor(path, now = () => Date.now()) {
+  declare db: DatabaseSync;
+  declare now: () => number;
+  constructor(path: string, now = () => Date.now()) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path); this.now = now;
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
@@ -60,35 +64,35 @@ export class Store {
   }
   close() { this.db.close(); }
   at() { return new Date(this.now()).toISOString(); }
-  transaction(fn) {
+  transaction<T>(fn: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); this.db.exec('COMMIT'); return result; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
-  all(kind) { return this.db.prepare('SELECT body FROM entities WHERE kind=? ORDER BY rowid').all(kind).map(r => JSON.parse(r.body)); }
-  get(kind, entityId) {
+  all<K extends Kind>(kind: K): Entity<K>[] { return this.db.prepare('SELECT body FROM entities WHERE kind=? ORDER BY rowid').all(kind).map(r => JSON.parse(r.body as string)); }
+  get<K extends Kind>(kind: K, entityId: string): Entity<K> {
     const row = this.db.prepare('SELECT body FROM entities WHERE kind=? AND id=?').get(kind, entityId);
-    requireThat(row, `${kind} 不存在`, 404); return JSON.parse(row.body);
+    requireThat(row, `${kind} 不存在`, 404); return JSON.parse(row.body as string);
   }
-  check(item, expected) { requireThat(item.revision === expected, '数据已更新。请重新打开并审阅后重试。', 409); }
-  save(kind, item) { this.db.prepare('INSERT OR REPLACE INTO entities VALUES (?,?,?)').run(kind, item.id, JSON.stringify(item)); return item; }
-  meta(key, fallback) { const row = this.db.prepare('SELECT body FROM meta WHERE key=?').get(key); return row ? JSON.parse(row.body) : fallback; }
-  setMeta(key, value) { this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value)); return value; }
-  event(taskId, type, details = {}) {
+  check(item: { revision: number }, expected: number) { requireThat(item.revision === expected, '数据已更新。请重新打开并审阅后重试。', 409); }
+  save<K extends Kind>(kind: K, item: Entity<K>): Entity<K> { this.db.prepare('INSERT OR REPLACE INTO entities VALUES (?,?,?)').run(kind, item.id, JSON.stringify(item)); return item; }
+  meta<T>(key: string, fallback: T): T { const row = this.db.prepare('SELECT body FROM meta WHERE key=?').get(key); return row ? JSON.parse(row.body as string) : fallback; }
+  setMeta<T>(key: string, value: T): T { this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value)); return value; }
+  event(taskId: string | null, type: string, details: Partial<TaskEvent> = {}) {
     const event = { id: randomUUID(), at: this.at(), type, ...details };
     this.db.prepare('INSERT INTO events VALUES (?,?,?,?)').run(event.id, taskId, event.at, JSON.stringify(event)); return event;
   }
-  taskHistory(taskId) { return this.db.prepare('SELECT body FROM events WHERE task_id=? ORDER BY rowid DESC').all(taskId).map(r => JSON.parse(r.body)); }
-  focus() { return this.meta('focus', { revision: 0, taskId: null, status: 'idle', elapsedMs: 0, startedAt: null, segments: [] }); }
-  settings() { return this.meta('settings', { revision: 0, reminders: true, followUpMinutes: 60, reviewTime: '18:00', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }); }
-  sessions() {
+  taskHistory(taskId: string): TaskEvent[] { return this.db.prepare('SELECT body FROM events WHERE task_id=? ORDER BY rowid DESC').all(taskId).map(r => JSON.parse(r.body as string)); }
+  focus(): Focus { return this.meta('focus', { revision: 0, taskId: null, status: 'idle', elapsedMs: 0, startedAt: null, segments: [] }); }
+  settings(): Settings { return this.meta('settings', { revision: 0, reminders: true, followUpMinutes: 60, reviewTime: '18:00', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }); }
+  sessions(): LiveSession[] {
     return this.db.prepare('SELECT body FROM sessions ORDER BY rowid DESC').all().map(r => {
-      const s = JSON.parse(r.body);
+      const s = JSON.parse(r.body as string) as Session;
       const state = runtimeState(s.observedState);
       return { ...s, state: ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(state) && this.now() - Date.parse(s.observedAt) > 300000 ? 'unknown' : state };
     });
   }
-  snapshot() {
+  snapshot(): Snapshot {
     const sessions = this.sessions();
     return {
       tasks: this.all('task').map(t => {
@@ -97,46 +101,49 @@ export class Store {
       }),
       projects: this.all('project'), objectives: this.all('objective'), keyResults: this.all('keyResult'), plans: this.all('plan'), inbox: this.all('inbox'), sessions,
       focus: { ...this.focus(), totalMs: elapsed(this.focus(), this.now()) }, settings: this.settings(),
-      notices: this.db.prepare('SELECT body FROM notices ORDER BY rowid DESC LIMIT 200').all().map(r => JSON.parse(r.body)),
-      timeRecords: this.meta('timeRecords', []), serverTime: this.at(),
+      notices: this.db.prepare('SELECT body FROM notices ORDER BY rowid DESC LIMIT 200').all().map(r => JSON.parse(r.body as string)),
+      timeRecords: this.meta<TimeRecord[]>('timeRecords', []), serverTime: this.at(),
     };
   }
-  validate(kind, input) {
-    const data = schemas[kind].parse(input);
+  validate<K extends Kind>(kind: K, input: unknown): EntityData<K> {
+    const data = schemas[kind].parse(input) as EntityData<Kind>;
     if ('plannedStart' in data) {
       requireThat(Boolean(data.plannedStart) === Boolean(data.plannedEnd), '排期必须同时填写开始和结束时间');
-      if (data.plannedStart) requireThat(Date.parse(data.plannedEnd) > Date.parse(data.plannedStart), '结束时间必须晚于开始时间');
+      if (data.plannedStart) requireThat(Date.parse(data.plannedEnd!) > Date.parse(data.plannedStart), '结束时间必须晚于开始时间');
     }
     if (kind === 'task') {
-      if (data.projectId) this.get('project', data.projectId);
-      if (data.keyResultId) this.get('keyResult', data.keyResultId);
+      const task = data as EntityData<'task'>;
+      if (task.projectId) this.get('project', task.projectId);
+      if (task.keyResultId) this.get('keyResult', task.keyResultId);
     }
     if (kind === 'keyResult') {
-      this.get('objective', data.objectiveId);
-      requireThat(data.target !== data.baseline, 'KR 目标值必须与起始值不同');
+      const result = data as EntityData<'keyResult'>;
+      this.get('objective', result.objectiveId);
+      requireThat(result.target !== result.baseline, 'KR 目标值必须与起始值不同');
     }
     if (kind === 'plan') {
-      requireThat(new Set(data.taskIds).size === data.taskIds.length, '计划中不能重复添加任务');
-      data.taskIds.forEach(taskId => this.get('task', taskId));
+      const plan = data as EntityData<'plan'>;
+      requireThat(new Set(plan.taskIds).size === plan.taskIds.length, '计划中不能重复添加任务');
+      plan.taskIds.forEach(taskId => this.get('task', taskId));
     }
-    return data;
+    return data as EntityData<K>;
   }
-  create(kind, input, extra = {}) {
-    const item = { ...this.validate(kind, input), ...extra, id: randomUUID(), revision: 1, createdAt: this.at(), updatedAt: this.at() };
+  create<K extends Kind>(kind: K, input: unknown, extra: Partial<Entity<K>> = {}): Entity<K> {
+    const item = { ...this.validate(kind, input), ...extra, id: randomUUID(), revision: 1, createdAt: this.at(), updatedAt: this.at() } as Entity<K>;
     if (kind === 'task') Object.assign(item, { state: 'defining', sessionId: null });
     this.save(kind, item);
     if (kind === 'task') this.event(item.id, 'created');
     return item;
   }
-  update(kind, item, input) {
-    if (kind === 'task') requireThat(!['accepted', 'awaiting_acceptance', 'cancelled'].includes(item.state), '请先退回修改或重新打开任务，再编辑内容');
-    const existing = Object.fromEntries(Object.keys(schemas[kind].shape).map(k => [k, item[k]]));
+  update<K extends Kind>(kind: K, item: Entity<K>, input: Record<string, unknown>): Entity<K> {
+    if (kind === 'task') requireThat(!['accepted', 'awaiting_acceptance', 'cancelled'].includes((item as Task).state), '请先退回修改或重新打开任务，再编辑内容');
+    const existing = Object.fromEntries(Object.keys(schemas[kind].shape).map(k => [k, (item as unknown as Record<string, unknown>)[k]]));
     const data = this.validate(kind, { ...existing, ...input });
     const result = this.save(kind, { ...item, ...data, revision: item.revision + 1, updatedAt: this.at() });
     if (kind === 'task') this.event(item.id, 'updated', { revision: result.revision });
     return result;
   }
-  syncCodexProjects(projects) {
+  syncCodexProjects(projects: CodexProject[]) {
     return this.transaction(() => {
       const existing = this.all('project'); let added = 0, updated = 0;
       for (const project of projects) {
@@ -147,7 +154,7 @@ export class Store {
       return { count: projects.length, added, updated };
     });
   }
-  syncCodexThreads(threads, complete = true) {
+  syncCodexThreads(threads: CodexThread[], complete = true) {
     return this.transaction(() => {
       const existing = new Map(this.sessions().map(session => { const { state, ...stored } = session; return [session.id, stored]; }));
       const seen = new Set(); let added = 0, updated = 0;
@@ -155,7 +162,7 @@ export class Store {
         if (seen.has(thread.id)) continue;
         seen.add(thread.id);
         const previous = existing.get(thread.id);
-        const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
+        const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true } as Session;
         if (previous?.catalogUpdatedAt && Date.parse(thread.updatedAt) > Date.parse(previous.catalogUpdatedAt)) delete session.confirmedAt;
         if (thread.state !== 'unknown' || !previous) {
           if (thread.state !== previous?.observedState || thread.updatedAt !== previous?.catalogUpdatedAt) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: 'thread/list', source: 'codex-app-server' });
@@ -171,8 +178,8 @@ export class Store {
       return { count: seen.size, added, updated };
     });
   }
-  dayPlans(day) { return this.all('plan').filter(plan => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)); }
-  addToDay(day, taskIds) {
+  dayPlans(day: string) { return this.all('plan').filter(plan => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)); }
+  addToDay(day: string, taskIds: string[]) {
     const plans = this.dayPlans(day), covered = new Set(plans.flatMap(plan => plan.taskIds));
     const added = taskIds.filter(taskId => !covered.has(taskId));
     if (!added.length) return;
@@ -180,20 +187,20 @@ export class Store {
     if (primary) this.update('plan', primary, { taskIds: [...primary.taskIds, ...added] });
     else this.create('plan', { title: '今日计划', date: day, taskIds: added });
   }
-  command(raw, authority = 'model') {
+  command(raw: unknown, authority: 'model' | 'human' = 'model') {
     const c = commandSchema.parse(raw);
     return this.transaction(() => {
-      if (['create', 'create_tasks', 'promote'].includes(c.action)) {
+      if (c.action === 'create' || c.action === 'create_tasks' || c.action === 'promote') {
         if (c.action === 'create') requireThat(!c.planDate || c.kind === 'task', '只有任务可以加入今日计划');
         const previous = this.db.prepare('SELECT body FROM requests WHERE id=?').get(c.requestId);
         const fingerprint = JSON.stringify(c.action === 'create' ? { kind: c.kind, data: c.data, ...(c.planDate ? { planDate: c.planDate } : {}) } : { ...c, requestId: undefined });
         const kind = c.action === 'create' ? c.kind : 'task';
         if (previous) {
-          const saved = JSON.parse(previous.body);
+          const saved = JSON.parse(previous.body as string);
           requireThat(saved.fingerprint === fingerprint, '同一 requestId 不能用于不同创建请求', 409);
-          return c.action === 'create_tasks' ? { tasks: saved.entityIds.map(entityId => this.get(kind, entityId)) } : this.get(kind, saved.entityId);
+          return c.action === 'create_tasks' ? { tasks: saved.entityIds.map((entityId: string) => this.get(kind, entityId)) } : this.get(kind, saved.entityId);
         }
-        let captured;
+        let captured: Entity<'inbox'> | undefined;
         if (c.action === 'promote') {
           captured = this.get('inbox', c.id); this.check(captured, c.revision);
           requireThat(!captured.archived, '请先恢复已归档的想法');
@@ -219,7 +226,7 @@ export class Store {
       }
       if (c.action === 'update') {
         const item = this.get(c.kind, c.id); this.check(item, c.revision);
-        if (item.codex && 'title' in c.data) requireThat(c.data.title === item.title, '项目名称由 Codex 维护，请在 Codex 中修改后同步。');
+        if ('codex' in item && item.codex && 'title' in c.data) requireThat(c.data.title === item.title, '项目名称由 Codex 维护，请在 Codex 中修改后同步。');
         return this.update(c.kind, item, c.data);
       }
       if (c.action === 'delete') {
@@ -228,7 +235,7 @@ export class Store {
           || this.all('keyResult').some(k => k.objectiveId === c.id) || this.all('plan').some(p => p.taskIds.includes(c.id));
         requireThat(!referenced, '请先移除相关任务、KR 或计划引用');
         if (c.kind === 'task') {
-          requireThat(item.state === 'defining' && !item.sessionId && !this.meta('timeRecords', []).some(r => r.taskId === c.id) && this.focus().taskId !== c.id, '有执行或计时记录的任务请取消，保留审计记录');
+          requireThat((item as Task).state === 'defining' && !(item as Task).sessionId && !this.meta<TimeRecord[]>('timeRecords', []).some(r => r.taskId === c.id) && this.focus().taskId !== c.id, '有执行或计时记录的任务请取消，保留审计记录');
           requireThat(this.taskHistory(c.id).every(e => ['created', 'updated'].includes(e.type)), '已有工作流记录的任务请取消，保留审计记录');
           this.db.prepare('DELETE FROM events WHERE task_id=?').run(c.id);
         }
@@ -241,7 +248,7 @@ export class Store {
       if (c.action === 'ack') {
         const row = this.db.prepare('SELECT body FROM notices WHERE id=?').get(c.id);
         requireThat(row, '提醒不存在', 404);
-        const notice = { ...JSON.parse(row.body), read: true };
+        const notice = { ...JSON.parse(row.body as string), read: true };
         this.db.prepare('UPDATE notices SET body=? WHERE id=?').run(JSON.stringify(notice), c.id); return notice;
       }
       const task = this.get('task', c.id); this.check(task, c.revision);
@@ -255,7 +262,7 @@ export class Store {
         task.sessionId = c.sessionId;
       }
       if (c.action === 'transition') {
-        const allowed = { defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['ready', 'executing', 'cancelled'], cancelled: ['defining'], accepted: ['defining'] };
+        const allowed: Partial<Record<Task["state"], string[]>> = { defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['ready', 'executing', 'cancelled'], cancelled: ['defining'], accepted: ['defining'] };
         requireThat(allowed[task.state]?.includes(c.state), `不能从 ${task.state} 变为 ${c.state}`);
         if (task.state === 'accepted') requireThat(authority === 'human', '重新打开已验收任务必须由人在界面操作');
         if (c.state === 'ready') requireThat(task.criteria.trim(), '请先填写验收标准');
@@ -277,7 +284,7 @@ export class Store {
       return task;
     });
   }
-  review(raw) {
+  review(raw: unknown) {
     const c = reviewSchema.parse(raw);
     return this.transaction(() => {
       const task = this.get('task', c.id); this.check(task, c.revision);
@@ -290,12 +297,12 @@ export class Store {
       this.save('task', task); this.event(task.id, 'review', { ...task.review, delivery: task.delivery }); return task;
     });
   }
-  confirmSession(raw) {
+  confirmSession(raw: unknown): Session {
     const c = sessionConfirmSchema.parse(raw);
     return this.transaction(() => {
       const row = this.db.prepare('SELECT body FROM sessions WHERE id=?').get(c.id);
       requireThat(row, '会话不存在', 404);
-      const session = JSON.parse(row.body);
+      const session = JSON.parse(row.body as string);
       requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, '会话已变化，请刷新并重新确认。', 409);
       requireThat(['idle', 'completed'].includes(runtimeState(session.observedState)), '只有本轮结束或已结束的会话可以确认完成');
       requireThat(!this.all('task').some(task => task.sessionId === c.id && task.state !== 'cancelled'), '已关联任务的会话请通过任务验收确认完成');
@@ -306,12 +313,12 @@ export class Store {
       return session;
     });
   }
-  changeFocus(c) {
+  changeFocus(c: Extract<Command, { action: 'focus' }>) {
     const f = this.focus(); this.check(f, c.revision);
     const at = this.at();
     if (c.operation === 'start') {
       requireThat(f.status === 'idle', '请先结束当前专注');
-      const task = this.get('task', c.taskId);
+      const task = this.get('task', c.taskId!);
       requireThat(!['accepted', 'cancelled'].includes(task.state), '已结束的任务不能计时');
       Object.assign(f, { taskId: task.id, status: 'running', startedAt: at, elapsedMs: 0, segments: [] });
     } else {
@@ -325,8 +332,8 @@ export class Store {
         }
         f.status = 'paused';
         if (c.operation === 'finish') {
-          const record = { id: randomUUID(), taskId: f.taskId, endedAt: at, durationMs: f.elapsedMs, segments: f.segments };
-          this.setMeta('timeRecords', [...this.meta('timeRecords', []), record]);
+          const record = { id: randomUUID(), taskId: f.taskId!, endedAt: at, durationMs: f.elapsedMs, segments: f.segments };
+          this.setMeta('timeRecords', [...this.meta<TimeRecord[]>('timeRecords', []), record]);
           this.event(f.taskId, 'focus', { durationMs: f.elapsedMs });
           Object.assign(f, { taskId: null, status: 'idle', elapsedMs: 0, startedAt: null, segments: [] });
         }
@@ -334,11 +341,11 @@ export class Store {
     }
     f.revision++; return this.setMeta('focus', f);
   }
-  observe(raw) {
+  observe(raw: unknown): Session {
     const event = z.object({ session_id: id, hook_event_name: z.enum(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PermissionRequest', 'Stop', 'Interrupt', 'SessionEnd']), cwd: z.string().max(2000), turn_id: z.string().max(200).optional() }).parse(raw);
     return this.transaction(() => {
       const row = this.db.prepare('SELECT body FROM sessions WHERE id=?').get(event.session_id);
-      const previous = row ? JSON.parse(row.body) : null;
+      const previous = row ? JSON.parse(row.body as string) : null;
       if (['Stop', 'Interrupt'].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
       const states = { SessionStart: 'idle', UserPromptSubmit: 'running', PreToolUse: 'running', PostToolUse: 'running', PermissionRequest: 'waiting_approval', Stop: 'idle', Interrupt: 'interrupted', SessionEnd: 'completed' };
       const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: 'codex-hook' };
@@ -349,7 +356,7 @@ export class Store {
   tick() {
     return this.transaction(() => {
       const s = this.settings(); const now = this.now();
-      const add = (key, title, taskId = null) => {
+      const add = (key: string, title: string, taskId: string | null = null) => {
         const notice = { id: randomUUID(), key, title, taskId, createdAt: this.at(), read: false };
         if (!this.db.prepare('SELECT id FROM notices WHERE json_extract(body,\'$.key\')=?').get(key)) this.db.prepare('INSERT INTO notices VALUES (?,?)').run(notice.id, JSON.stringify(notice));
       };

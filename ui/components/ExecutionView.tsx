@@ -1,33 +1,37 @@
 // Adapted from Xinmo Desktop ExecutionView.tsx: callbacks replace desktop backend calls.
+import type { CSSProperties, DragEvent, PointerEvent } from 'react';
+import type { Task, Project, LiveSession } from '../../src/types.ts';
+import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
 import { useRef, useState } from 'react';
 import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, Code2 } from 'lucide-react';
-import { fmt, labels, priorityLabels, runtimeLabel } from '../format.js';
-import { runtimeState } from '../../src/runtime.js';
-import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, canConfirmAiSession, boardDropDecision } from '../execution-board.js';
+import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
+import { runtimeState } from '../../src/runtime.ts';
+import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
 export { boardColumns, sessionColumn };
 
-export function AiBadge({ task }) {
+export function AiBadge({ task }: { task: Pick<Task, 'ai' | 'sessionId'> }) {
   return <span className={`execution-status status-${runtimeState(task.ai?.state)}`} title={task.ai ? `来源：${task.ai.source === 'codex-hook' ? 'Codex hook' : 'Codex 会话接口'} · ${fmt(task.ai.observedAt)} · ${task.ai.event}` : '同步 Codex 或启用 hooks 后可观察；业务执行中不代表 AI 正在运行'}>
     {task.sessionId ? runtimeLabel(task.ai || { state: 'unknown' }) : '未关联 AI'}
   </span>;
 }
 
-export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onDragStart, onDragEnd }) {
+interface ExecutionCardProps extends Pick<TaskCallbacks, 'onOpenTask'>, Partial<Pick<TaskCallbacks, 'onOpenSession' | 'onReviewTask' | 'onOpenCodex'>> { task: Task; projects: Project[]; busy: boolean; onDragStart?: (event: DragEvent, task: Task) => void; onDragEnd?: () => void }
+
+export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onDragStart, onDragEnd }: ExecutionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const dragged = useRef(false);
   const column = executionColumnForTask(task), status = taskStatus(task);
-  const active = ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(runtimeState(task.ai?.state));
   const handleRuntime = column === 'waiting_user' && ['waiting_approval', 'waiting_input', 'failed'].includes(runtimeState(task.ai?.state)) && task.state !== 'awaiting_acceptance' && onOpenSession;
-  return <article className="execution-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
+  return <article className="execution-card execution-task-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
     onDragStart={event => { dragged.current = true; onDragStart?.(event, task); }}
     onDragEnd={() => { onDragEnd?.(); setTimeout(() => { dragged.current = false; }, 0); }}>
     <div className="execution-card__summary">
-      <button type="button" className="execution-card__title" disabled={busy} aria-label={`编辑任务 ${task.title}`} onClick={() => { if (!dragged.current) onOpenTask(task.id); }}><strong title={task.title}>{task.title}</strong></button>
+      <button type="button" className="execution-card__title" disabled={busy} aria-label={`打开任务详情 ${task.title}`} onClick={() => { if (!dragged.current) onOpenTask(task.id); }}><strong title={task.title}>{task.title}</strong></button>
       <button type="button" className="execution-card__expand" disabled={busy} aria-label={`展开任务 ${task.title}`} aria-expanded={expanded} aria-controls={`execution-task-${task.id}`} onClick={() => { if (!dragged.current) setExpanded(value => !value); }}><ChevronDown size={14} aria-hidden="true" /></button>
     </div>
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
-      <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession(task.sessionId) : task.state === 'awaiting_acceptance' && onReviewTask ? onReviewTask(task) : onOpenTask(task.id)}><ListTodo size={12} />{task.state === 'awaiting_acceptance' ? '审阅交付' : handleRuntime ? '回原会话处理' : column === 'defining' ? '完善要求' : column === 'waiting_user' ? '处理任务' : active ? '查看进度' : '查看详情'}</button>
+      {(handleRuntime || (task.state === 'awaiting_acceptance' && onReviewTask)) && <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession!(task.sessionId!) : onReviewTask!(task)}><ListTodo size={12} />{handleRuntime ? '回原会话处理' : '审阅交付'}</button>}
     </div>
     <div className="execution-card__badges execution-card__actions">{(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <AiBadge task={task} />}{(task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><Code2 size={12} />打开 Codex</button>}</div>
     <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
@@ -37,12 +41,13 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
         {status !== labels[task.state] && <small>交付：{labels[task.state]}</small>}
         {task.description && <small>{task.description}</small>}
       </div>
-      <div className="execution-card__actions">{task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask(task, 'reject')}>退回修改</button>}</div>
+      <div className="execution-card__actions">{task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask!(task, 'reject')}>退回修改</button>}</div>
     </div>
   </article>;
 }
 
-function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmSession, onDragStart, onDragEnd }) {
+interface SessionCardProps extends Pick<TaskCallbacks, 'onOpenSession' | 'onConfirmSession'> { session: LiveSession; tasks: Task[]; projects: Project[]; busy: boolean; onDragStart?: (event: DragEvent, session: LiveSession) => void; onDragEnd?: () => void }
+function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmSession, onDragStart, onDragEnd }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const workspace = projects.find(project => project.codex?.workspacePath === session.cwd)?.title || session.cwd?.split(/[\\/]/).pop();
   const title = session.title || `Codex · ${workspace || session.id.slice(-8)}`;
@@ -58,19 +63,19 @@ function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmS
   </article>;
 }
 
-export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onOpenCodex, onTransition, onError }) {
-  const [dropTarget, setDropTarget] = useState(null);
+export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onOpenCodex, onTransition, onError }: Omit<TaskCallbacks, 'onReschedule'> & { tasks: Task[]; allTasks?: Task[]; sessions?: LiveSession[]; projects: Project[]; busy: boolean; onError: (message: string) => void }) {
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
-  const [sessionLimits, setSessionLimits] = useState({});
+  const [sessionLimits, setSessionLimits] = useState<Record<string, number>>({});
   const endDrag = () => setDropTarget(null);
-  const renderTask = task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex}
+  const renderTask = (task: Task) => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
-  const renderSession = session => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession}
+  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos-session', JSON.stringify({ id: value.id, observedAt: value.observedAt, event: value.event, turnId: value.turnId, catalogUpdatedAt: value.catalogUpdatedAt })); }} onDragEnd={endDrag} />;
   const completedItems = [
-    ...tasks.filter(task => executionColumnForTask(task) === 'completed').map(task => ({ kind: 'task', value: task, at: task.review?.at || task.updatedAt })),
-    ...sessions.filter(session => sessionColumn(session) === 'completed').map(session => ({ kind: 'session', value: session, at: session.confirmedAt })),
-  ].sort((left, right) => (Date.parse(right.at) || 0) - (Date.parse(left.at) || 0));
+    ...tasks.filter(task => executionColumnForTask(task) === 'completed').map(task => ({ kind: 'task' as const, value: task, at: task.review?.at || task.updatedAt })),
+    ...sessions.filter(session => sessionColumn(session) === 'completed').map(session => ({ kind: 'session' as const, value: session, at: session.confirmedAt })),
+  ].sort((left, right) => (Date.parse(right.at ?? '') || 0) - (Date.parse(left.at ?? '') || 0));
   return <><div className="execution-board" aria-label="任务执行看板" tabIndex={0}>
     {boardColumns.map(column => {
       const items = tasks.filter(task => column.stages.includes(executionColumnForTask(task)));
@@ -79,7 +84,7 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
       if (completed) items.sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0));
       return <section className={`execution-column column-${column.id} ${dropTarget === column.id ? 'is-drop-target' : ''}`} key={column.id} aria-labelledby={`execution-column-${column.id}`}
         onDragOver={event => { if (!busy && (event.dataTransfer.types.includes('application/ai-todos') || (column.id === 'completed' && event.dataTransfer.types.includes('application/ai-todos-session')))) { event.preventDefault(); setDropTarget(column.id); } }}
-        onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget)) endDrag(); }}
+        onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) endDrag(); }}
         onDrop={event => {
           event.preventDefault(); endDrag();
           if (busy) return;
@@ -98,9 +103,9 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
             if (decision.reason) throw new Error(decision.reason);
             if (decision.action === 'request_changes') {
               if (task.revision !== value.revision) throw new Error('任务已变化，请刷新并重新审阅。');
-              onReviewTask(task, 'reject');
+              onReviewTask!(task, 'reject');
             } else onTransition(task.id, value.revision, 'executing');
-          } catch (error) { onError(error.message); }
+          } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
         }}>
         <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length} 任务{sessionItems.length > 0 && ` · ${sessionItems.length} 会话`}</em></header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={`${column.label}卡片`}>
@@ -115,16 +120,16 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
   </>;
 }
 
-function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onReschedule }) {
-  const [preview, setPreview] = useState(null);
-  const pointer = useRef(null);
+function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onReschedule }: Pick<TaskCallbacks, 'onOpenTask' | 'onReschedule'> & { task: Task; anchor: number; dayWidth: number; width: number; busy: boolean }) {
+  const [preview, setPreview] = useState<{ left: number; width: number } | null>(null);
+  const pointer = useRef<{ id: number; x: number; edge?: RescheduleEdge } | null>(null);
   const suppressClick = useRef(false);
-  const start = (Date.parse(task.plannedStart) - anchor) / 86400000 * dayWidth;
-  const end = (Date.parse(task.plannedEnd) - anchor) / 86400000 * dayWidth;
+  const start = (Date.parse(task.plannedStart!) - anchor) / 86400000 * dayWidth;
+  const end = (Date.parse(task.plannedEnd!) - anchor) / 86400000 * dayWidth;
   const left = Math.max(0, start), originalWidth = Math.max(8, Math.min(width, end) - left);
   if (end <= 0 || start >= width) return null;
   const locked = ['accepted', 'awaiting_acceptance'].includes(task.state);
-  const finishPointer = (event, cancelled = false) => {
+  const finishPointer = (event: PointerEvent<HTMLButtonElement>, cancelled = false) => {
     const active = pointer.current;
     if (!active || active.id !== event.pointerId) return;
     const distance = event.clientX - active.x;
@@ -139,7 +144,7 @@ function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onResche
   };
   return <button type="button" className={`timeline-bar ${preview ? 'is-dragging' : ''}`} disabled={busy}
     style={{ left: preview?.left ?? left, width: preview?.width ?? originalWidth }}
-    onPointerDown={event => { if (event.button !== 0 || locked) return; pointer.current = { id: event.pointerId, x: event.clientX, edge: event.target.dataset.edge }; event.currentTarget.setPointerCapture(event.pointerId); }}
+    onPointerDown={event => { if (event.button !== 0 || locked) return; pointer.current = { id: event.pointerId, x: event.clientX, edge: (event.target as HTMLElement).dataset.edge as RescheduleEdge | undefined }; event.currentTarget.setPointerCapture(event.pointerId); }}
     onPointerMove={event => {
       const active = pointer.current;
       if (!active || active.id !== event.pointerId) return;
@@ -154,8 +159,8 @@ function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onResche
   </button>;
 }
 
-export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onReschedule }) {
-  const [zoom, setZoom] = useState('day');
+export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onReschedule }: Omit<TaskCallbacks, 'onTransition' | 'onConfirmSession'> & { tasks: Task[]; projects: Project[]; busy: boolean }) {
+  const [zoom, setZoom] = useState<'day' | 'week' | 'month'>('day');
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
   const [anchor, setAnchor] = useState(todayAnchor);
   const scheduled = tasks.filter(task => task.plannedStart && task.state !== 'cancelled');
@@ -164,13 +169,13 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
   return <div className="execution-timeline">
     <div className="timeline-toolbar"><span><CalendarRange size={15} />计划窗口 <strong>{scheduled.length}</strong> 项</span>
       <div className="row"><button aria-label="向前两周" onClick={() => setAnchor(value => value - 14 * 86400000)}>←</button><button onClick={() => setAnchor(todayAnchor())}>今天</button><button aria-label="向后两周" onClick={() => setAnchor(value => value + 14 * 86400000)}>→</button>
-        <div className="segmented-control timeline-zoom" aria-label="甘特图时间粒度">{[['day', '日'], ['week', '周'], ['month', '月']].map(([value, label]) => <button key={value} className={zoom === value ? 'is-active' : ''} aria-pressed={zoom === value} onClick={() => setZoom(value)}>{label}</button>)}</div>
+        <div className="segmented-control timeline-zoom" aria-label="甘特图时间粒度">{([['day', '日'], ['week', '周'], ['month', '月']] as const).map(([value, label]) => <button key={value} className={zoom === value ? 'is-active' : ''} aria-pressed={zoom === value} onClick={() => setZoom(value)}>{label}</button>)}</div>
       </div>
     </div>
     <div className="timeline-table"><div className="timeline-label-column"><div className="timeline-label-heading">任务 / 项目</div>{scheduled.map(task => <div className="timeline-task-label" key={task.id}><button className="quiet" onClick={() => onOpenTask(task.id)} title={task.title}>{task.title}</button><small>{projects.find(project => project.id === task.projectId)?.title || '无项目'} · {labels[task.state]}</small></div>)}</div>
       <div className="timeline-scroll" tabIndex={0} aria-label="甘特图时间轴，可水平滚动"><div className="timeline-canvas" style={{ width }}>
         <div className="timeline-axis" style={{ gridTemplateColumns: `repeat(${Math.ceil(days / step)}, ${step * dayWidth}px)` }}>{Array.from({ length: Math.ceil(days / step) }, (_, index) => <span key={index}><strong>{new Date(anchor + index * step * 86400000).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}</strong></span>)}</div>
-        {scheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` }}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy} onOpenTask={onOpenTask} onReschedule={onReschedule} /></div>)}
+        {scheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy} onOpenTask={onOpenTask} onReschedule={onReschedule} /></div>)}
         {!scheduled.length && <p className="empty-state">暂无已排期任务，在任务详情中设置计划时间。</p>}
       </div></div>
     </div>

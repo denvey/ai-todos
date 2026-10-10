@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runtimeState, runtimeLabels, runtimeLabel, codexRuntimeState } from '../src/runtime.js';
-import { executionColumnForTask, executionColumnForSession, taskStatus, canConfirmAiSession, visibleExecutionSessions, boardDropDecision } from '../ui/execution-board.js';
-import { taskSessionPrompt } from '../ui/codex-prompts.js';
+import { runtimeState, runtimeLabels, runtimeLabel, codexRuntimeState } from '../src/runtime.ts';
+import { executionColumnForTask, executionColumnForSession, taskStatus, canConfirmAiSession, visibleExecutionSessions, boardDropDecision } from '../ui/execution-board.ts';
+import { taskSessionPrompt } from '../ui/codex-prompts.ts';
 
 const task = (state, ai) => ({ id: 'task', state, sessionId: ai?.id, ai });
 const runtime = state => ({ id: 'session', state, observedAt: '2026-10-10T00:00:00Z' });
@@ -49,7 +49,10 @@ test('Xinmo task stages combine business state and runtime instead of leaving st
   for (const state of ['waiting_input', 'waiting_approval', 'failed', 'idle', 'completed', 'unknown']) assert.equal(executionColumnForTask(task('executing', runtime(state))), 'waiting_user');
   assert.equal(executionColumnForTask(task('executing', runtime('interrupted'))), 'ready');
   assert.equal(executionColumnForTask(task('defining', runtime('running'))), 'executing');
-  assert.equal(executionColumnForTask(task('defining', { ...runtime('idle'), mode: 'planning' })), 'waiting_user');
+  assert.equal(executionColumnForTask(task('defining', { ...runtime('idle'), mode: 'planning' })), 'defining');
+  assert.equal(executionColumnForTask(task('defining', { ...runtime('completed'), mode: 'planning', event: 'SessionEnd', turnId: null })), 'defining');
+  assert.equal(executionColumnForTask(task('defining', { ...runtime('idle'), mode: 'planning', turnId: 'real-turn' })), 'waiting_user');
+  assert.equal(executionColumnForTask(task('defining', { ...runtime('completed'), mode: 'planning', event: 'Stop' })), 'waiting_user');
   assert.equal(taskStatus(task('executing', runtime('idle'))), '待确定');
   assert.equal(taskStatus(task('awaiting_acceptance', runtime('idle'))), '待我验收');
   assert.equal(taskStatus(task('accepted', runtime('running'))), '已完成');

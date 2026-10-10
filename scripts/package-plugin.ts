@@ -1,17 +1,18 @@
 import { build } from 'esbuild';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import './build.js';
+import './build.ts';
 const target = resolve('plugins/ai-todos');
 const nodeCommand = process.argv.includes('--portable') ? 'node' : process.execPath;
 mkdirSync(target, { recursive: true });
-await build({ entryPoints: ['src/mcp.js', 'src/server.js', 'hooks/observe.js', 'scripts/open.js', 'scripts/stop.js'], bundle: true, platform: 'node', format: 'esm', target: 'node24', outbase: '.', outdir: target, packages: 'bundle', banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' } });
+await build({ entryPoints: ['src/mcp.ts', 'src/server.ts', 'hooks/observe.ts', 'scripts/open.ts', 'scripts/stop.ts'], bundle: true, platform: 'node', format: 'esm', target: 'node24', outbase: '.', outdir: target, packages: 'bundle', banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' } });
 for (const path of ['dist', 'skills', 'docs', 'assets', 'README.md']) cpSync(path, `${target}/${path}`, { recursive: true });
 // Codex skips hooks for the root Agent Plugins manifest; use its native manifest.
 rmSync(`${target}/plugin.json`, { force: true });
-writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', version: '0.1.4', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
+writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', version: '0.1.5', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
 const mcp = JSON.parse(readFileSync('mcp.json', 'utf8'));
 mcp.mcpServers['ai-todos'].command = nodeCommand;
+mcp.mcpServers['ai-todos'].args = ['${PLUGIN_ROOT}/src/mcp.js'];
 writeFileSync(`${target}/mcp.json`, JSON.stringify(mcp, null, 2));
 writeFileSync(`${target}/.mcp.json`, JSON.stringify({ mcpServers: { 'ai-todos': { command: nodeCommand, args: ['src/mcp.js'], cwd: '.' } } }, null, 2));
 mkdirSync(`${target}/.codex-plugin`, { recursive: true });
