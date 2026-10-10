@@ -11,16 +11,18 @@ const definitionSuggestionSchema = schemas.task.pick({ title: true, description:
 const captureSuggestionSchema = definitionSuggestionSchema.extend({ suggestedSteps: z.array(definitionSuggestionSchema).max(20), reason: z.string().max(1000) }).strict();
 const pageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: schemas.project.shape.title, roots: z.array(z.object({ path: z.string().min(1).max(2000).refine(isAbsolute, '项目目录必须是绝对路径') })) })), nextCursor: z.string().nullable() });
 const mcpPageSchema = z.object({ data: z.array(z.object({ name: z.string().min(1) })), nextCursor: z.string().nullable() });
+const threadPageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: z.string().nullable().optional(), preview: z.string(), cwd: z.string().min(1).max(2000).refine(isAbsolute, '会话目录必须是绝对路径'), projectId: z.string().uuid().nullable().optional(), parentThreadId: z.string().nullable().optional(), ephemeral: z.boolean(), updatedAt: z.number().int().nonnegative(), status: z.object({ type: z.string(), activeFlags: z.array(z.string()).optional() }) })), nextCursor: z.string().nullable() });
 export const codexActionSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('sync_projects') }).strict(),
+  z.object({ operation: z.literal('sync_threads') }).strict(),
   z.object({ operation: z.literal('refine'), draft: draftSchema, field: z.enum(['title', 'description', 'criteria']).optional() }).strict(),
   z.object({ operation: z.literal('capture_refine'), draft: draftSchema }).strict(),
 ]);
 
-async function withCodex(action, timeout) {
+async function withCodex(action, timeout, shared = false) {
   const cwd = await mkdtemp(join(tmpdir(), 'ai-todos-codex-'));
   const disabled = ['shell_tool', 'unified_exec', 'apps', 'plugins', 'hooks', 'multi_agent', 'multi_agent_v2', 'computer_use', 'browser_use', 'image_generation', 'view_image', 'skill_search', 'tool_suggest', 'code_mode_host'];
-  const child = spawn('codex', ['app-server', '--stdio', ...disabled.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"'], { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawn('codex', shared ? ['app-server', 'proxy'] : ['app-server', '--stdio', ...disabled.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"'], { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
   const pending = new Map(); let sequence = 0, buffer = '', onNotification = () => {};
   let fail;
   const failure = new Promise((_, reject) => { fail = reject; });
@@ -30,8 +32,8 @@ async function withCodex(action, timeout) {
   });
   const timer = setTimeout(() => fail(new DomainError('Codex 响应超时，请稍后重试。', 504)), timeout);
   child.on('error', error => fail(new DomainError(error.code === 'ENOENT' ? '找不到 Codex CLI，请安装并登录 Codex 后重试。' : '无法启动 Codex。', 503)));
-  child.stdin.on('error', () => fail(new DomainError('Codex 连接已关闭。', 502)));
-  child.on('exit', () => fail(new DomainError('Codex 已退出，请检查 CLI 登录和模型配置。', 502)));
+  child.stdin.on('error', () => fail(new DomainError('Codex 连接已关闭。', shared ? 503 : 502)));
+  child.on('exit', () => fail(new DomainError(shared ? 'Codex 宿主连接不可用。' : 'Codex 已退出，请检查 CLI 登录和模型配置。', shared ? 503 : 502)));
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', chunk => {
     buffer += chunk;
@@ -88,6 +90,33 @@ async function listProjects() {
   }, 15000);
 }
 
+async function listThreads() {
+  const read = async ({ request }) => {
+    const threads = [], cursors = new Set(); let cursor = null;
+    do {
+      const page = threadPageSchema.parse(await request('thread/list', { limit: 100, cursor, sourceKinds: ['cli', 'vscode', 'appServer', 'unknown'], archived: false, useStateDbOnly: true }));
+      for (const thread of page.data) {
+        if (thread.ephemeral || thread.parentThreadId) continue;
+        const requestIndex = thread.preview.startsWith('# Files mentioned by the user:') ? thread.preview.indexOf('## My request:') : -1;
+        const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + '## My request:'.length) : thread.preview).trim();
+        const title = (thread.name?.trim() || preview.replace(/\s+/g, ' ') || `Codex · ${basename(thread.cwd)} · ${thread.id.slice(-8)}`).slice(0, 300);
+        const state = thread.status.type === 'active' ? (thread.status.activeFlags?.some(flag => ['waitingOnApproval', 'waitingOnUserInput'].includes(flag)) ? 'waiting' : 'running') : thread.status.type === 'idle' ? 'idle' : thread.status.type === 'systemError' ? 'interrupted' : 'unknown';
+        threads.push({ id: thread.id, title, preview: preview.slice(0, 20000), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1000).toISOString(), state });
+      }
+      cursor = page.nextCursor;
+      if (cursor && cursors.has(cursor)) throw new DomainError('Codex 会话分页重复，未同步任何会话。', 502);
+      cursors.add(cursor);
+    } while (cursor);
+    return threads;
+  };
+  try { return { threads: await withCodex(read, 30000, true), transport: 'host' }; }
+  catch (error) {
+    if (![503, 504].includes(error.status)) throw error;
+    // shortcut: clients without a shared control socket use stored history; hooks supply live state.
+    return { threads: (await withCodex(read, 30000)).map(thread => ({ ...thread, state: 'unknown' })), transport: 'history' };
+  }
+}
+
 async function refine(draft, project, outputSchema, capture, field) {
   return withCodex(async ({ cwd, request, notifications }) => {
     // Disable configured MCP servers by name without reading their configuration or credentials.
@@ -128,6 +157,10 @@ async function refine(draft, project, outputSchema, capture, field) {
 export async function codexAction(store, raw) {
   const input = codexActionSchema.parse(raw);
   if (input.operation === 'sync_projects') return store.syncCodexProjects(await listProjects());
+  if (input.operation === 'sync_threads') {
+    const result = await listThreads();
+    return { ...store.syncCodexThreads(result.threads), transport: result.transport };
+  }
   const project = input.draft.projectId ? store.get('project', input.draft.projectId) : null;
   const capture = input.operation === 'capture_refine';
   const outputSchema = capture ? captureSuggestionSchema : input.field === 'title' ? definitionSuggestionSchema : input.field ? schemas.task.pick({ [input.field]: true }).required() : suggestionSchema;

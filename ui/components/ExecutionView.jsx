@@ -1,6 +1,6 @@
 // Adapted from Xinmo Desktop ExecutionView.tsx: callbacks replace desktop backend calls.
 import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo } from 'lucide-react';
+import { CalendarRange, ChevronDown, ListTodo, ExternalLink } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabels } from '../format.js';
 
 export const boardColumns = [
@@ -11,7 +11,7 @@ export const boardColumns = [
 ];
 
 export function AiBadge({ task }) {
-  return <span className={`execution-status status-${task.ai?.state || 'unknown'}`} title={task.ai ? `来源：Codex hook · ${fmt(task.ai.observedAt)} · ${task.ai.event}` : '启用并信任 hooks 后可观察；业务执行中不代表 AI 正在运行'}>
+  return <span className={`execution-status status-${task.ai?.state || 'unknown'}`} title={task.ai ? `来源：${task.ai.source === 'codex-hook' ? 'Codex hook' : 'Codex 会话接口'} · ${fmt(task.ai.observedAt)} · ${task.ai.event}` : '同步 Codex 或启用 hooks 后可观察；业务执行中不代表 AI 正在运行'}>
     {task.sessionId ? runtimeLabels[task.ai?.state || 'unknown'] : '未关联 AI'}
   </span>;
 }
@@ -40,15 +40,34 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onDragStart, o
   </article>;
 }
 
-export function BoardView({ tasks, projects, busy, onOpenTask, onTransition, onError }) {
+export function sessionColumn(session) {
+  if (session.state === 'running') return 'executing';
+  if (['waiting', 'idle', 'interrupted', 'ended'].includes(session.state)) return 'waiting_user';
+  return 'unstarted';
+}
+
+function SessionCard({ session, projects, busy, onOpenSession }) {
+  const [expanded, setExpanded] = useState(false);
+  const title = session.title || `Codex · ${session.cwd?.split(/[\\/]/).pop() || session.id.slice(-8)}`;
+  return <article className="execution-card execution-session-card">
+    <button type="button" className="execution-card__summary" aria-expanded={expanded} aria-controls={`execution-session-${session.id}`} onClick={() => setExpanded(value => !value)}><strong title={title}>{title}</strong><ChevronDown size={14} /></button>
+    <div className="execution-card__primary execution-card__actions"><span className={`execution-status status-${session.state}`}>{runtimeLabels[session.state]}</span><button type="button" disabled={busy} onClick={() => onOpenSession(session.id)}><ExternalLink size={12} />打开原会话</button></div>
+    <div className="execution-card__badges"><span className="muted">Codex 会话{session.state === 'unknown' ? ' · 运行状态未获取' : ''}</span></div>
+    <div id={`execution-session-${session.id}`} className="execution-card__content" hidden={!expanded}><div className="execution-card__body"><small>{projects.find(project => project.codex?.workspacePath === session.cwd)?.title || session.cwd}</small><small>{session.preview}</small><small>{fmt(session.catalogUpdatedAt || session.observedAt)} · {session.id}</small></div></div>
+  </article>;
+}
+
+export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onTransition, onError }) {
   const [dropTarget, setDropTarget] = useState(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
+  const [sessionLimits, setSessionLimits] = useState({});
   const endDrag = () => setDropTarget(null);
   const renderTask = task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
   return <div className="execution-board" aria-label="任务执行看板" tabIndex={0}>
     {boardColumns.map(column => {
       const items = tasks.filter(task => column.states.includes(task.state));
+      const sessionItems = sessions.filter(session => sessionColumn(session) === column.id);
       const completed = column.id === 'completed';
       if (completed) items.sort((left, right) => (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0));
       return <section className={`execution-column column-${column.id} ${dropTarget === column.id ? 'is-drop-target' : ''}`} key={column.id} aria-labelledby={`execution-column-${column.id}`}
@@ -65,10 +84,12 @@ export function BoardView({ tasks, projects, busy, onOpenTask, onTransition, onE
             onTransition(task.id, value.revision, column.dropTarget);
           } catch (error) { onError(error.message); }
         }}>
-        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length}</em></header>
+        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length + sessionItems.length}</em></header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={`${column.label}卡片`}>
           {items.slice(0, completed && !showCompletedHistory ? 5 : undefined).map(renderTask)}
-          {!items.length && <div className="execution-column__empty">暂无任务</div>}
+          {sessionItems.slice(0, sessionLimits[column.id] || 50).map(session => <SessionCard key={session.id} session={session} projects={projects} busy={busy} onOpenSession={onOpenSession} />)}
+          {sessionItems.length > (sessionLimits[column.id] || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, [column.id]: (current[column.id] || 50) + 50 }))}>更多会话（还剩 {sessionItems.length - (sessionLimits[column.id] || 50)} 个）</button>}
+          {!items.length && !sessionItems.length && <div className="execution-column__empty">暂无任务</div>}
         </div>
         {completed && items.length > 5 && <button type="button" className="execution-column__history" aria-expanded={showCompletedHistory} onClick={() => setShowCompletedHistory(value => !value)}>{showCompletedHistory ? '收起完成历史' : `查看完成历史（${items.length} 项）`}</button>}
       </section>;

@@ -123,7 +123,7 @@ function Workspace() {
   const [, setTick] = useState(0);
   const [focusTaskId, setFocusTaskId] = useState('');
   const [statsDate, setStatsDate] = useState(localDay(new Date()));
-  const receivedAt = useRef(Date.now()), snapshotRef = useRef(null), refreshing = useRef(null), busyRef = useRef(false), modalRef = useRef(null), toastTimer = useRef(null);
+  const receivedAt = useRef(Date.now()), snapshotRef = useRef(null), refreshing = useRef(null), busyRef = useRef(false), modalRef = useRef(null), toastTimer = useRef(null), syncingThreads = useRef(null), lastThreadSync = useRef(0);
   modalRef.current = modal;
   const toast = value => { setMessage(value); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setMessage(''), 6000); };
   const refresh = async (force = false) => {
@@ -161,6 +161,20 @@ function Workspace() {
     const result = await api('codex', { operation: 'sync_projects' });
     await refresh(true); toast(`已同步 ${result.count} 个 Codex 项目目录，新增 ${result.added} 个，更新 ${result.updated} 个。`);
   });
+  const syncThreads = async () => {
+    if (syncingThreads.current) return syncingThreads.current;
+    const pending = api('codex', { operation: 'sync_threads' }); syncingThreads.current = pending;
+    try { const result = await pending; lastThreadSync.current = Date.now(); await refresh(true); return result; }
+    finally { if (syncingThreads.current === pending) syncingThreads.current = null; }
+  };
+  const syncWorkspace = () => run(async () => {
+    const result = await syncThreads(); toast(`已同步 ${result.count} 个 Codex 会话。${result.transport === 'history' ? '宿主实时接口不可用，运行状态由可信 hooks 补充。' : ''}`);
+  });
+  const openSession = id => run(async () => {
+    const url = `codex://threads/${id}`;
+    if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error('宿主未允许打开原会话。'); }
+    else window.location.href = url;
+  });
   const createToday = (draft, onCreated) => open({ type: 'task', draft, onCreated, planDate: localDay(new Date()), requestId: crypto.randomUUID() });
   const addToday = (data, requestId) => run(() => mutate({ action: 'create_tasks', data, requestId, planDate: localDay(new Date()) }), data.length > 1 ? `已拆成 ${data.length} 项今日任务` : '任务已加入今天');
   const captureInbox = (title, requestId) => run(() => mutate({ action: 'create', kind: 'inbox', data: { title }, requestId }), '已记入收件箱，不计入待办和逾期');
@@ -193,12 +207,14 @@ function Workspace() {
         const next = await refresh(true); notified = new Set(next.notices.map(notice => notice.id));
         try { await api('codex', { operation: 'sync_projects' }); if (!stopped) await refresh(true); }
         catch (reason) { if (!stopped) toast(`Codex 项目未同步：${reason.message}`); }
+        try { await syncThreads(); } catch (reason) { if (!stopped) toast(`Codex 会话未同步：${reason.message}`); }
         const id = location.hash.match(/^#task=([a-f0-9-]+)$/)?.[1]; if (id) await openTask(id);
       } catch (reason) { setConnectionError(reason.message); }
       if (stopped) return;
       timer = setInterval(() => setTick(value => value + 1), 1000);
       poll = setInterval(async () => {
         try {
+          if (Date.now() - lastThreadSync.current > 30000) { lastThreadSync.current = Date.now(); try { await syncThreads(); } catch (reason) { toast(`Codex 会话未同步：${reason.message}`); } }
           const next = await refresh();
           if (!embedded && 'Notification' in window && Notification.permission === 'granted') next.notices.filter(notice => !notice.read && !notified.has(notice.id)).forEach(notice => { new Notification('ai-todos', { body: notice.title }); notified.add(notice.id); });
         } catch (reason) { setConnectionError(reason.message); }
@@ -213,6 +229,7 @@ function Workspace() {
   const findTask = id => snapshot.tasks.find(task => task.id === id);
   const projectName = id => snapshot.projects.find(project => project.id === id)?.title || '无项目';
   const filtered = snapshot.tasks.filter(task => (!view.project || task.projectId === view.project) && (!view.search || `${task.title} ${task.description}`.toLowerCase().includes(view.search.toLowerCase())));
+  const filteredSessions = snapshot.sessions.filter(session => session.catalogVisible !== false && !snapshot.tasks.some(task => task.sessionId === session.id && task.state !== 'cancelled') && (!view.project || snapshot.projects.find(project => project.id === view.project)?.codex?.workspacePath === session.cwd) && (!view.search || `${session.title || ''} ${session.preview || ''}`.toLowerCase().includes(view.search.toLowerCase()))).sort((a, b) => (b.catalogUpdatedAt || b.observedAt).localeCompare(a.catalogUpdatedAt || a.observedAt));
   const elapsedMs = snapshot.focus.totalMs + (snapshot.focus.status === 'running' ? Math.max(0, Date.now() - receivedAt.current) : 0);
   const focusCandidates = snapshot.tasks.filter(task => !['accepted', 'cancelled'].includes(task.state));
   const selectedFocusTask = focusCandidates.find(task => task.id === focusTaskId);
@@ -256,7 +273,7 @@ function Workspace() {
   }
   return <><main className={`main ${view.page === 'work' && view.mode === 'board' ? 'is-board' : ''} ${snapshot.focus.status !== 'idle' ? 'has-focus' : ''}`}>
     <nav className="nav" aria-label="功能导航">{Object.entries(mainPages).map(([page, label]) => <button key={page} disabled={busy} aria-current={mainPage === page ? 'page' : undefined} className={mainPage === page ? 'active' : ''} onClick={() => setViewValue('page', page)}>{label}</button>)}<button className={`nav-settings ${view.page === 'settings' ? 'active' : ''}`} disabled={busy} aria-current={view.page === 'settings' ? 'page' : undefined} onClick={() => setViewValue('page', 'settings')}><Settings size={16} aria-hidden="true" />设置</button></nav>
-    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>首页</button><span className="muted" aria-hidden="true">/</span></>}<h1>{pages[view.page]}</h1></div><div className="row">{embedded && <button className="quiet small" disabled={busy} onClick={() => run(() => openLocal())}>打开完整应用</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>每日计划</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />同步 Codex 项目</button>}<button className="quiet small" disabled={busy} onClick={() => run(() => refresh(true))}><RefreshCw size={14} />刷新</button>{['work', 'projects', 'okr', 'plans'].includes(view.page) && <button className="primary" disabled={busy} onClick={() => openEntity({ work: 'task', projects: 'project', okr: 'objective', plans: 'plan' }[view.page])}><Plus size={15} />{`新建${singular[{ work: 'task', projects: 'project', okr: 'objective', plans: 'plan' }[view.page]]}`}</button>}</div></header>
+    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>首页</button><span className="muted" aria-hidden="true">/</span></>}<h1>{pages[view.page]}</h1></div><div className="row">{embedded && <button className="quiet small" disabled={busy} onClick={() => run(() => openLocal())}>打开完整应用</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>每日计划</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />同步 Codex 项目</button>}<button className="quiet small" disabled={busy} onClick={view.page === 'work' ? syncWorkspace : () => run(() => refresh(true))}><RefreshCw size={14} />刷新</button>{['work', 'projects', 'okr', 'plans'].includes(view.page) && <button className="primary" disabled={busy} onClick={() => openEntity({ work: 'task', projects: 'project', okr: 'objective', plans: 'plan' }[view.page])}><Plus size={15} />{`新建${singular[{ work: 'task', projects: 'project', okr: 'objective', plans: 'plan' }[view.page]]}`}</button>}</div></header>
     {connectionError && <p className="error" role="alert">连接暂不可用：{connectionError}</p>}
     {view.page === 'today' && <section className="card home-focus" aria-labelledby="focus-stats-title"><div className="row spaced"><h2 id="focus-stats-title">专注统计</h2><DatePickerField label="统计日期" value={statsDate} onValueChange={setStatsDate} /></div><div className="summary"><div><p>{statsDate === localDay(new Date()) ? '今日投入' : '选定日期投入'}</p><div className="number">{hours(dayRows.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>累计投入</p><div className="number">{hours(totals.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>已保存专注记录</p><div className="number">{snapshot.timeRecords.length}</div></div></div>
       <details><summary>查看专注明细</summary>
@@ -267,8 +284,8 @@ function Workspace() {
       </details></section>}
     <TodayView snapshot={snapshot} busy={busy} visible={view.page === 'today'} elapsedMs={elapsedMs} onAdd={addToday} onCapture={captureInbox} onRefine={refineCapture} onCreateTask={createToday} onOpenTask={openTask} onTaskAction={taskAction} onFocusTask={focusTask} onFocusOp={focusOp} onInbox={openInbox} onPlan={() => { const date = localDay(new Date()); open({ type: 'daily_plan', date, plans: dayPlans(snapshot.plans, date) }); }} />
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? '已归档，可在收件箱底部恢复' : '已恢复到收件箱')} />
-    {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
-      {view.mode === 'board' ? <BoardView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onReschedule={reschedule} />}
+    {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><span className="muted">{filtered.length} 项任务 · {filteredSessions.length} 个 Codex 会话</span><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div></div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
+      {view.mode === 'board' ? <BoardView tasks={filtered} sessions={filteredSessions} onOpenSession={openSession} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">已取消（{filtered.filter(task => task.state === 'cancelled').length}）</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

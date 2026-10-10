@@ -141,6 +141,26 @@ export class Store {
       return { count: projects.length, added, updated };
     });
   }
+  syncCodexThreads(threads) {
+    return this.transaction(() => {
+      const existing = new Map(this.sessions().map(session => { const { state, ...stored } = session; return [session.id, stored]; }));
+      const seen = new Set(); let added = 0, updated = 0;
+      for (const thread of threads) {
+        if (seen.has(thread.id)) continue;
+        seen.add(thread.id);
+        const previous = existing.get(thread.id);
+        const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
+        if (thread.state !== 'unknown' || !previous || Date.parse(thread.updatedAt) > Date.parse(previous.observedAt)) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: 'thread/list', source: 'codex-app-server' });
+        if (JSON.stringify(session) === JSON.stringify(previous)) continue;
+        this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session));
+        previous ? updated++ : added++;
+      }
+      for (const previous of existing.values()) if (previous.catalogVisible && !seen.has(previous.id)) {
+        this.db.prepare('UPDATE sessions SET body=? WHERE id=?').run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
+      }
+      return { count: seen.size, added, updated };
+    });
+  }
   dayPlans(day) { return this.all('plan').filter(plan => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)); }
   addToDay(day, taskIds) {
     const plans = this.dayPlans(day), covered = new Set(plans.flatMap(plan => plan.taskIds));
@@ -219,7 +239,7 @@ export class Store {
         requireThat(['defining', 'ready', 'changes_requested'].includes(task.state), '仅定义、就绪或待修改任务可绑定会话');
         if (task.sessionId && task.sessionId !== c.sessionId) requireThat(authority === 'human', '重新绑定必须由人在界面操作');
         if (c.sessionId) {
-          requireThat(this.sessions().some(s => s.id === c.sessionId), '会话必须来自可信 Codex hook 事件；请启用并信任插件 hooks');
+          requireThat(this.sessions().some(s => s.id === c.sessionId && (s.source === 'codex-hook' || s.catalogVisible)), '请先同步 Codex 会话或启用可信插件 hooks');
           requireThat(!this.all('task').some(t => t.id !== task.id && t.sessionId === c.sessionId && t.state !== 'cancelled'), '该会话已绑定任务，请继续使用原任务');
         }
         task.sessionId = c.sessionId;
@@ -295,7 +315,7 @@ export class Store {
       const previous = row ? JSON.parse(row.body) : null;
       if (['Stop', 'Interrupt'].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
       const states = { SessionStart: 'idle', UserPromptSubmit: 'running', PreToolUse: 'running', PostToolUse: 'running', PermissionRequest: 'waiting', Stop: 'idle', Interrupt: 'interrupted', SessionEnd: 'ended' };
-      const session = { id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: 'codex-hook' };
+      const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: 'codex-hook' };
       this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session)); return session;
     });
   }

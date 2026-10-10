@@ -19878,6 +19878,30 @@ var Store = class {
       return { count: projects.length, added, updated };
     });
   }
+  syncCodexThreads(threads) {
+    return this.transaction(() => {
+      const existing = new Map(this.sessions().map((session) => {
+        const { state, ...stored } = session;
+        return [session.id, stored];
+      }));
+      const seen = /* @__PURE__ */ new Set();
+      let added = 0, updated = 0;
+      for (const thread of threads) {
+        if (seen.has(thread.id)) continue;
+        seen.add(thread.id);
+        const previous = existing.get(thread.id);
+        const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
+        if (thread.state !== "unknown" || !previous || Date.parse(thread.updatedAt) > Date.parse(previous.observedAt)) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
+        if (JSON.stringify(session) === JSON.stringify(previous)) continue;
+        this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
+        previous ? updated++ : added++;
+      }
+      for (const previous of existing.values()) if (previous.catalogVisible && !seen.has(previous.id)) {
+        this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
+      }
+      return { count: seen.size, added, updated };
+    });
+  }
   dayPlans(day) {
     return this.all("plan").filter((plan) => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
@@ -19964,7 +19988,7 @@ var Store = class {
         requireThat(["defining", "ready", "changes_requested"].includes(task.state), "\u4EC5\u5B9A\u4E49\u3001\u5C31\u7EEA\u6216\u5F85\u4FEE\u6539\u4EFB\u52A1\u53EF\u7ED1\u5B9A\u4F1A\u8BDD");
         if (task.sessionId && task.sessionId !== c.sessionId) requireThat(authority === "human", "\u91CD\u65B0\u7ED1\u5B9A\u5FC5\u987B\u7531\u4EBA\u5728\u754C\u9762\u64CD\u4F5C");
         if (c.sessionId) {
-          requireThat(this.sessions().some((s) => s.id === c.sessionId), "\u4F1A\u8BDD\u5FC5\u987B\u6765\u81EA\u53EF\u4FE1 Codex hook \u4E8B\u4EF6\uFF1B\u8BF7\u542F\u7528\u5E76\u4FE1\u4EFB\u63D2\u4EF6 hooks");
+          requireThat(this.sessions().some((s) => s.id === c.sessionId && (s.source === "codex-hook" || s.catalogVisible)), "\u8BF7\u5148\u540C\u6B65 Codex \u4F1A\u8BDD\u6216\u542F\u7528\u53EF\u4FE1\u63D2\u4EF6 hooks");
           requireThat(!this.all("task").some((t) => t.id !== task.id && t.sessionId === c.sessionId && t.state !== "cancelled"), "\u8BE5\u4F1A\u8BDD\u5DF2\u7ED1\u5B9A\u4EFB\u52A1\uFF0C\u8BF7\u7EE7\u7EED\u4F7F\u7528\u539F\u4EFB\u52A1");
         }
         task.sessionId = c.sessionId;
@@ -20055,7 +20079,7 @@ var Store = class {
       const previous = row ? JSON.parse(row.body) : null;
       if (["Stop", "Interrupt"].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
       const states = { SessionStart: "idle", UserPromptSubmit: "running", PreToolUse: "running", PostToolUse: "running", PermissionRequest: "waiting", Stop: "idle", Interrupt: "interrupted", SessionEnd: "ended" };
-      const session = { id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
+      const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
       this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
       return session;
     });
@@ -20095,15 +20119,17 @@ var definitionSuggestionSchema = schemas.task.pick({ title: true, description: t
 var captureSuggestionSchema = definitionSuggestionSchema.extend({ suggestedSteps: external_exports.array(definitionSuggestionSchema).max(20), reason: external_exports.string().max(1e3) }).strict();
 var pageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: schemas.project.shape.title, roots: external_exports.array(external_exports.object({ path: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u9879\u76EE\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84") })) })), nextCursor: external_exports.string().nullable() });
 var mcpPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ name: external_exports.string().min(1) })), nextCursor: external_exports.string().nullable() });
+var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
+  external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("capture_refine"), draft: draftSchema }).strict()
 ]);
-async function withCodex(action, timeout) {
+async function withCodex(action, timeout, shared = false) {
   const cwd = await mkdtemp(join(tmpdir(), "ai-todos-codex-"));
   const disabled = ["shell_tool", "unified_exec", "apps", "plugins", "hooks", "multi_agent", "multi_agent_v2", "computer_use", "browser_use", "image_generation", "view_image", "skill_search", "tool_suggest", "code_mode_host"];
-  const child = spawn("codex", ["app-server", "--stdio", ...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"'], { cwd, stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawn("codex", shared ? ["app-server", "proxy"] : ["app-server", "--stdio", ...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"'], { cwd, stdio: ["pipe", "pipe", "ignore"] });
   const pending = /* @__PURE__ */ new Map();
   let sequence = 0, buffer = "", onNotification = () => {
   };
@@ -20120,8 +20146,8 @@ async function withCodex(action, timeout) {
   });
   const timer2 = setTimeout(() => fail(new DomainError("Codex \u54CD\u5E94\u8D85\u65F6\uFF0C\u8BF7\u7A0D\u540E\u91CD\u8BD5\u3002", 504)), timeout);
   child.on("error", (error62) => fail(new DomainError(error62.code === "ENOENT" ? "\u627E\u4E0D\u5230 Codex CLI\uFF0C\u8BF7\u5B89\u88C5\u5E76\u767B\u5F55 Codex \u540E\u91CD\u8BD5\u3002" : "\u65E0\u6CD5\u542F\u52A8 Codex\u3002", 503)));
-  child.stdin.on("error", () => fail(new DomainError("Codex \u8FDE\u63A5\u5DF2\u5173\u95ED\u3002", 502)));
-  child.on("exit", () => fail(new DomainError("Codex \u5DF2\u9000\u51FA\uFF0C\u8BF7\u68C0\u67E5 CLI \u767B\u5F55\u548C\u6A21\u578B\u914D\u7F6E\u3002", 502)));
+  child.stdin.on("error", () => fail(new DomainError("Codex \u8FDE\u63A5\u5DF2\u5173\u95ED\u3002", shared ? 503 : 502)));
+  child.on("exit", () => fail(new DomainError(shared ? "Codex \u5BBF\u4E3B\u8FDE\u63A5\u4E0D\u53EF\u7528\u3002" : "Codex \u5DF2\u9000\u51FA\uFF0C\u8BF7\u68C0\u67E5 CLI \u767B\u5F55\u548C\u6A21\u578B\u914D\u7F6E\u3002", shared ? 503 : 502)));
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
     buffer += chunk;
@@ -20191,6 +20217,33 @@ async function listProjects() {
     return projects;
   }, 15e3);
 }
+async function listThreads() {
+  const read = async ({ request }) => {
+    const threads = [], cursors = /* @__PURE__ */ new Set();
+    let cursor = null;
+    do {
+      const page = threadPageSchema.parse(await request("thread/list", { limit: 100, cursor, sourceKinds: ["cli", "vscode", "appServer", "unknown"], archived: false, useStateDbOnly: true }));
+      for (const thread of page.data) {
+        if (thread.ephemeral || thread.parentThreadId) continue;
+        const requestIndex = thread.preview.startsWith("# Files mentioned by the user:") ? thread.preview.indexOf("## My request:") : -1;
+        const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + "## My request:".length) : thread.preview).trim();
+        const title = (thread.name?.trim() || preview.replace(/\s+/g, " ") || `Codex \xB7 ${basename(thread.cwd)} \xB7 ${thread.id.slice(-8)}`).slice(0, 300);
+        const state = thread.status.type === "active" ? thread.status.activeFlags?.some((flag) => ["waitingOnApproval", "waitingOnUserInput"].includes(flag)) ? "waiting" : "running" : thread.status.type === "idle" ? "idle" : thread.status.type === "systemError" ? "interrupted" : "unknown";
+        threads.push({ id: thread.id, title, preview: preview.slice(0, 2e4), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1e3).toISOString(), state });
+      }
+      cursor = page.nextCursor;
+      if (cursor && cursors.has(cursor)) throw new DomainError("Codex \u4F1A\u8BDD\u5206\u9875\u91CD\u590D\uFF0C\u672A\u540C\u6B65\u4EFB\u4F55\u4F1A\u8BDD\u3002", 502);
+      cursors.add(cursor);
+    } while (cursor);
+    return threads;
+  };
+  try {
+    return { threads: await withCodex(read, 3e4, true), transport: "host" };
+  } catch (error62) {
+    if (![503, 504].includes(error62.status)) throw error62;
+    return { threads: (await withCodex(read, 3e4)).map((thread) => ({ ...thread, state: "unknown" })), transport: "history" };
+  }
+}
 async function refine2(draft, project, outputSchema, capture, field) {
   return withCodex(async ({ cwd, request, notifications }) => {
     const mcpServers = /* @__PURE__ */ Object.create(null), cursors = /* @__PURE__ */ new Set();
@@ -20231,6 +20284,10 @@ async function refine2(draft, project, outputSchema, capture, field) {
 async function codexAction(store2, raw) {
   const input2 = codexActionSchema.parse(raw);
   if (input2.operation === "sync_projects") return store2.syncCodexProjects(await listProjects());
+  if (input2.operation === "sync_threads") {
+    const result = await listThreads();
+    return { ...store2.syncCodexThreads(result.threads), transport: result.transport };
+  }
   const project = input2.draft.projectId ? store2.get("project", input2.draft.projectId) : null;
   const capture = input2.operation === "capture_refine";
   const outputSchema = capture ? captureSuggestionSchema : input2.field === "title" ? definitionSuggestionSchema : input2.field ? schemas.task.pick({ [input2.field]: true }).required() : suggestionSchema;

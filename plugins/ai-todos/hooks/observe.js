@@ -19873,6 +19873,30 @@ var Store = class {
       return { count: projects.length, added, updated };
     });
   }
+  syncCodexThreads(threads) {
+    return this.transaction(() => {
+      const existing = new Map(this.sessions().map((session) => {
+        const { state, ...stored } = session;
+        return [session.id, stored];
+      }));
+      const seen = /* @__PURE__ */ new Set();
+      let added = 0, updated = 0;
+      for (const thread of threads) {
+        if (seen.has(thread.id)) continue;
+        seen.add(thread.id);
+        const previous = existing.get(thread.id);
+        const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
+        if (thread.state !== "unknown" || !previous || Date.parse(thread.updatedAt) > Date.parse(previous.observedAt)) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
+        if (JSON.stringify(session) === JSON.stringify(previous)) continue;
+        this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
+        previous ? updated++ : added++;
+      }
+      for (const previous of existing.values()) if (previous.catalogVisible && !seen.has(previous.id)) {
+        this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
+      }
+      return { count: seen.size, added, updated };
+    });
+  }
   dayPlans(day) {
     return this.all("plan").filter((plan) => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
@@ -19959,7 +19983,7 @@ var Store = class {
         requireThat(["defining", "ready", "changes_requested"].includes(task.state), "\u4EC5\u5B9A\u4E49\u3001\u5C31\u7EEA\u6216\u5F85\u4FEE\u6539\u4EFB\u52A1\u53EF\u7ED1\u5B9A\u4F1A\u8BDD");
         if (task.sessionId && task.sessionId !== c.sessionId) requireThat(authority === "human", "\u91CD\u65B0\u7ED1\u5B9A\u5FC5\u987B\u7531\u4EBA\u5728\u754C\u9762\u64CD\u4F5C");
         if (c.sessionId) {
-          requireThat(this.sessions().some((s) => s.id === c.sessionId), "\u4F1A\u8BDD\u5FC5\u987B\u6765\u81EA\u53EF\u4FE1 Codex hook \u4E8B\u4EF6\uFF1B\u8BF7\u542F\u7528\u5E76\u4FE1\u4EFB\u63D2\u4EF6 hooks");
+          requireThat(this.sessions().some((s) => s.id === c.sessionId && (s.source === "codex-hook" || s.catalogVisible)), "\u8BF7\u5148\u540C\u6B65 Codex \u4F1A\u8BDD\u6216\u542F\u7528\u53EF\u4FE1\u63D2\u4EF6 hooks");
           requireThat(!this.all("task").some((t) => t.id !== task.id && t.sessionId === c.sessionId && t.state !== "cancelled"), "\u8BE5\u4F1A\u8BDD\u5DF2\u7ED1\u5B9A\u4EFB\u52A1\uFF0C\u8BF7\u7EE7\u7EED\u4F7F\u7528\u539F\u4EFB\u52A1");
         }
         task.sessionId = c.sessionId;
@@ -20050,7 +20074,7 @@ var Store = class {
       const previous = row ? JSON.parse(row.body) : null;
       if (["Stop", "Interrupt"].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
       const states = { SessionStart: "idle", UserPromptSubmit: "running", PreToolUse: "running", PostToolUse: "running", PermissionRequest: "waiting", Stop: "idle", Interrupt: "interrupted", SessionEnd: "ended" };
-      const session = { id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
+      const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
       this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
       return session;
     });
