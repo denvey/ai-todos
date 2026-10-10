@@ -114,9 +114,9 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
     })}
   </div>
     {unknownSessions.length > 0 && <details className="execution-session-history" onToggle={event => setShowUnknownSessions(event.currentTarget.open)}>
-      <summary>其他 Codex 会话（{unknownSessions.length} 个）</summary>
+      <summary>其他 Codex 会话（{unknownSessions.length} 个，不计入看板）</summary>
       {showUnknownSessions && <div className="execution-column__tasks">
-        <p className="muted">状态未确认或已中断的会话不计入进行中。可搜索或按项目筛选后打开原会话。</p>
+        <p className="muted">这里包含同步的历史会话。状态未确认或已中断的会话不计入看板总数，也不属于未开始任务。可搜索或按项目筛选后打开原会话。</p>
         {unknownSessions.slice(0, sessionLimits.unknown || 50).map(renderSession)}
         {unknownSessions.length > (sessionLimits.unknown || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, unknown: (current.unknown || 50) + 50 }))}>更多会话（还剩 {unknownSessions.length - (sessionLimits.unknown || 50)} 个）</button>}
       </div>}
