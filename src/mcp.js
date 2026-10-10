@@ -8,11 +8,13 @@ import { codexActionSchema } from './codex.js';
 import { ensureService, service } from './service-client.js';
 import { origin } from './paths.js';
 await ensureService();
-const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.0' });
+const icons = [{ src: `data:image/png;base64,${readFileSync(new URL('../assets/icon.png', import.meta.url)).toString('base64')}`, mimeType: 'image/png' }];
+const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.0', icons });
 const uri = 'ui://ai-todos/app.html';
 const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 const guarded = fn => async args => { try { return result(await fn(args)); } catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; } };
 registerAppTool(server, 'ai_todos_open', {
+  icons,
   title: '任务', description: 'Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.',
   inputSchema: z.object({}), annotations: { readOnlyHint: true, openWorldHint: false },
   _meta: { ui: { resourceUri: uri }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } },
@@ -25,4 +27,12 @@ server.registerTool('ai_todos_manage', {
 }, guarded(args => service('command', args.command)));
 server.registerTool('ai_todos_codex', { description: 'Sync Codex projects and existing conversations, or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.', inputSchema: z.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ['app'] } } }, guarded(args => service('codex', args.action)));
 registerAppResource(server, 'ai-todos workspace', uri, { description: 'Persistent local productivity workspace' }, async () => ({ contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: readFileSync(new URL('../dist/app.html', import.meta.url), 'utf8').replaceAll('__AI_TODOS_ORIGIN__', origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
-await server.connect(new StdioServerTransport());
+const transport = new StdioServerTransport();
+const send = transport.send.bind(transport);
+// shortcut: SDK 1.32 drops tool icons; remove when registerTool preserves them.
+transport.send = message => {
+  const tool = message.result?.tools?.find(tool => tool.name === 'ai_todos_open');
+  if (tool) tool.icons = icons;
+  return send(message);
+};
+await server.connect(transport);

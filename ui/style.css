@@ -67,6 +67,8 @@ p{line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .execution-view.is-board{flex:1;min-height:0;display:flex;flex-direction:column}
 .execution-view.is-board>:not(.execution-board){flex-shrink:0}
 .execution-view.is-board>details{max-height:40%;overflow:auto}
+.execution-session-history{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.execution-session-history>summary{padding:10px 12px;cursor:pointer;color:var(--muted);font-size:12px}
 .execution-toolbar{flex-wrap:wrap}
 .nav{display:flex;gap:4px;overflow:auto;border-bottom:1px solid var(--line);padding:10px 0}
 .nav button{border:0;padding:7px 12px;background:transparent;white-space:nowrap}

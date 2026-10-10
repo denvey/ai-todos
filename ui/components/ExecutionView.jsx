@@ -43,7 +43,7 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onDragStart, o
 export function sessionColumn(session) {
   if (session.state === 'running') return 'executing';
   if (['waiting', 'idle', 'interrupted', 'ended'].includes(session.state)) return 'waiting_user';
-  return 'unstarted';
+  return null;
 }
 
 function SessionCard({ session, projects, busy, onOpenSession }) {
@@ -61,10 +61,12 @@ export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, on
   const [dropTarget, setDropTarget] = useState(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState({});
+  const [showUnknownSessions, setShowUnknownSessions] = useState(false);
+  const unknownSessions = sessions.filter(session => sessionColumn(session) === null);
   const endDrag = () => setDropTarget(null);
   const renderTask = task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
-  return <div className="execution-board" aria-label="任务执行看板" tabIndex={0}>
+  return <><div className="execution-board" aria-label="任务执行看板" tabIndex={0}>
     {boardColumns.map(column => {
       const items = tasks.filter(task => column.states.includes(task.state));
       const sessionItems = sessions.filter(session => sessionColumn(session) === column.id);
@@ -84,7 +86,7 @@ export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, on
             onTransition(task.id, value.revision, column.dropTarget);
           } catch (error) { onError(error.message); }
         }}>
-        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length + sessionItems.length}</em></header>
+        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length} 任务{sessionItems.length > 0 && ` · ${sessionItems.length} 会话`}</em></header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={`${column.label}卡片`}>
           {items.slice(0, completed && !showCompletedHistory ? 5 : undefined).map(renderTask)}
           {sessionItems.slice(0, sessionLimits[column.id] || 50).map(session => <SessionCard key={session.id} session={session} projects={projects} busy={busy} onOpenSession={onOpenSession} />)}
@@ -94,7 +96,16 @@ export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, on
         {completed && items.length > 5 && <button type="button" className="execution-column__history" aria-expanded={showCompletedHistory} onClick={() => setShowCompletedHistory(value => !value)}>{showCompletedHistory ? '收起完成历史' : `查看完成历史（${items.length} 项）`}</button>}
       </section>;
     })}
-  </div>;
+  </div>
+    {unknownSessions.length > 0 && <details className="execution-session-history" onToggle={event => setShowUnknownSessions(event.currentTarget.open)}>
+      <summary>其他 Codex 会话 · 运行状态未知（{unknownSessions.length} 个）</summary>
+      {showUnknownSessions && <div className="execution-column__tasks">
+        <p className="muted">这些会话没有可用的运行状态，不计入未开始任务。可搜索或按项目筛选后打开原会话。</p>
+        {unknownSessions.slice(0, sessionLimits.unknown || 50).map(session => <SessionCard key={session.id} session={session} projects={projects} busy={busy} onOpenSession={onOpenSession} />)}
+        {unknownSessions.length > (sessionLimits.unknown || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, unknown: (current.unknown || 50) + 50 }))}>更多会话（还剩 {unknownSessions.length - (sessionLimits.unknown || 50)} 个）</button>}
+      </div>}
+    </details>}
+  </>;
 }
 
 function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onReschedule }) {

@@ -34032,11 +34032,11 @@ var Protocol = class {
    *
    * The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
    */
-  async connect(transport) {
+  async connect(transport2) {
     if (this._transport) {
       throw new Error("Already connected to a transport. Call close() before connecting to a new transport, or use a separate Protocol instance per connection.");
     }
-    this._transport = transport;
+    this._transport = transport2;
     const _onclose = this.transport?.onclose;
     this._transport.onclose = () => {
       _onclose?.();
@@ -35674,8 +35674,8 @@ var McpServer = class {
    *
    * The `server` object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
    */
-  async connect(transport) {
-    return await this.server.connect(transport);
+  async connect(transport2) {
+    return await this.server.connect(transport2);
   }
   /**
    * Closes the connection.
@@ -36675,7 +36675,8 @@ async function service(path, value) {
 
 // src/mcp.js
 await ensureService();
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.0" });
+var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.0", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
@@ -36686,6 +36687,7 @@ var guarded = (fn) => async (args) => {
   }
 };
 j(server, "ai_todos_open", {
+  icons,
   title: "\u4EFB\u52A1",
   description: "Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.",
   inputSchema: external_exports.object({}),
@@ -36702,4 +36704,11 @@ server.registerTool("ai_todos_manage", {
 }, guarded((args) => service("command", args.command)));
 server.registerTool("ai_todos_codex", { description: "Sync Codex projects and existing conversations, or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.", inputSchema: external_exports.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("codex", args.action)));
 G(server, "ai-todos workspace", uri, { description: "Persistent local productivity workspace" }, async () => ({ contents: [{ uri, mimeType: L, text: readFileSync2(new URL("../dist/app.html", import.meta.url), "utf8").replaceAll("__AI_TODOS_ORIGIN__", origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
-await server.connect(new StdioServerTransport());
+var transport = new StdioServerTransport();
+var send = transport.send.bind(transport);
+transport.send = (message) => {
+  const tool = message.result?.tools?.find((tool2) => tool2.name === "ai_todos_open");
+  if (tool) tool.icons = icons;
+  return send(message);
+};
+await server.connect(transport);
