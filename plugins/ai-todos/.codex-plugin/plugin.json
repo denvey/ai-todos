@@ -19,6 +19,8 @@
     "defaultPrompt": [
       "打开 ai-todos 工作台",
       "使用 ai-todos 管理当前任务，交付后提交证据，等待人工验收。"
-    ]
+    ],
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
   }
 }

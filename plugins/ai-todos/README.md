@@ -2,7 +2,7 @@
 
 可独立运行的 Codex 桌面端任务与专注管理插件。自带本地 MCP 服务、完整 Web 应用和 SQLite 持久化存储，**不需要 Xinmo Desktop、心魔 Gateway、OpenClaw 或 NAS**。
 
-当前版本：`0.1.0`。代码、可安装插件包和本地应用均已实现。Codex 内置浏览器路径已实际运行；MCP Apps 资源及 `global` / `thread` 入口元数据已实现，Codex 原生侧边栏入口与会话面板的宿主渲染尚未确认，详见 [宿主支持与验证记录](docs/host-support.md)。
+当前版本：`0.1.0`。代码、可安装插件包和本地应用均已实现。Codex 内置浏览器路径已实际运行；MCP Apps 资源及 `global` / `thread` 入口元数据已实现，用户当前 Codex 客户端已确认原生侧边栏入口和全屏工作台可用，会话面板的宿主渲染尚未确认，详见 [宿主支持与验证记录](docs/host-support.md)。
 
 界面采用紧凑顶部页签，没有网页左侧栏。嵌入 MCP Apps 时使用宿主提供的颜色、字体、圆角与明暗主题；浏览器里使用系统字体和中性黑白样式。顶部页签属于应用自身，原生 Codex 组件和侧栏入口仍需客户端支持，不能用页面样式替代。
 
@@ -17,7 +17,7 @@ codex plugin marketplace add denvey/ai-todos
 codex plugin add ai-todos@ai-todos-local
 ```
 
-仓库附带预构建插件，安装无需运行 npm 或编译。安装后开启新会话，输入“打开 ai-todos 工作台”；用 `/hooks` 审阅并信任插件 hooks，才能观察 AI 运行事件。若客户端没有显示 MCP App，使用工具返回的本地浏览器地址。原生侧边栏入口尚未确认。
+仓库附带预构建插件，安装无需运行 npm 或编译。安装后开启新会话，输入“打开 ai-todos 工作台”；用 `/hooks` 审阅并信任插件 hooks，才能观察 AI 运行事件。若客户端没有显示 MCP App，使用工具返回的本地浏览器地址。用户当前客户端已确认侧边栏入口可用。
 
 已添加同名本地 marketplace 的开发者应先按 `codex plugin marketplace --help` 管理现有来源，避免来源名称冲突。源码开发和本机打包方法见下文。
 
