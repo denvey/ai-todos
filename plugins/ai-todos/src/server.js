@@ -19896,7 +19896,7 @@ var Store = class {
       return { count: projects.length, added, updated };
     });
   }
-  syncCodexThreads(threads) {
+  syncCodexThreads(threads, complete = true) {
     return this.transaction(() => {
       const existing = new Map(this.sessions().map((session) => {
         const { state, ...stored } = session;
@@ -19918,7 +19918,7 @@ var Store = class {
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
       }
-      for (const previous of existing.values()) if (previous.catalogVisible && !seen.has(previous.id)) {
+      for (const previous of existing.values()) if (complete && previous.catalogVisible && !seen.has(previous.id)) {
         this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
       }
       return { count: seen.size, added, updated };
@@ -20148,10 +20148,33 @@ var Store = class {
 };
 
 // src/codex.js
-import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { promisify } from "node:util";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, normalize } from "node:path";
+import { basename, isAbsolute, join as join2, normalize } from "node:path";
+
+// src/paths.js
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join(homedir(), ".ai-todos"));
+var dbPath = join(dataDir, "ai-todos.sqlite");
+var runtimePath = join(dataDir, "runtime.json");
+var port = Number(process.env.AI_TODOS_PORT || 16943);
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
+var origin = `http://127.0.0.1:${port}`;
+
+// ui/codex-prompts.js
+function executionPrompt(task) {
+  return `\u4F7F\u7528 ai-todos \u6267\u884C\u539F\u4EFB\u52A1 ${task.id}\u300C${task.title}\u300D\u3002\u5148\u8C03\u7528 ai_todos_task \u9605\u8BFB\u5F53\u524D\u4EFB\u52A1\u4E0E\u9A8C\u6536\u6807\u51C6\uFF0C\u5E76\u4FDD\u7559\u5B9E\u9645\u8BFB\u53D6\u7684 revision\u3002${task.sessionId ? `\u6B64\u4EFB\u52A1\u7ED1\u5B9A Codex sessionId=${task.sessionId}\uFF1B\u5FC5\u987B\u4E0E\u672C\u4F1A\u8BDD\u53EF\u4FE1 hook \u63D0\u4F9B\u7684 sessionId \u6838\u5BF9\uFF0C\u4E00\u81F4\u624D\u80FD\u6267\u884C\uFF0C\u4E0D\u4E00\u81F4\u65F6\u505C\u6B62\u5E76\u8BA9\u7528\u6237\u6253\u5F00\u539F\u4F1A\u8BDD\u3002` : "\u5148\u4ECE\u672C\u4F1A\u8BDD\u53EF\u4FE1 hook \u83B7\u53D6 sessionId\uFF0C\u5E76\u67E5\u8BE2 ai_todos_snapshot \u4E2D\u5DF2\u89C2\u5BDF\u7684\u4F1A\u8BDD\u540E\u7ED1\u5B9A\uFF1B\u4E0D\u5F97\u731C\u6D4B ID\uFF0C\u4E0D\u8981\u91CD\u590D\u5EFA\u4EFB\u52A1\u3002"}\u6309\u5B9A\u4E49 \u2192 \u5C31\u7EEA \u2192 \u5F00\u59CB\u6267\u884C\u63A8\u8FDB\u3002\u771F\u5B9E\u4EA4\u4ED8\u540E\u7528 submit \u63D0\u4EA4\u6458\u8981\u548C\u5B9E\u9645\u8BC1\u636E\uFF0C\u4E0D\u80FD\u865A\u62A5\u6D4B\u8BD5\u7ED3\u679C\u3002Stop \u53EA\u4EE3\u8868\u672C\u8F6E\u7ED3\u675F\u3002\u8BF7\u63D0\u793A\u7528\u6237\u5728\u672C\u5730\u5E94\u7528\u5BA1\u9605\u8BC1\u636E\uFF0CAI \u4E0D\u5F97\u81EA\u884C\u9A8C\u6536\u3002`;
+}
+function taskSessionPrompt(task) {
+  return `\u8FD9\u662F\u5DF2\u4FDD\u5B58\u7684 ai-todos \u539F\u4EFB\u52A1\uFF0C\u670D\u52A1\u4F1A\u5173\u8054\u672C\u4F1A\u8BDD\u3002\u8C03\u7528 ai_todos_task \u9605\u8BFB\u539F\u4EFB\u52A1\uFF1B\u5DF2\u6709\u672C\u4F1A\u8BDD\u5173\u8054\u65F6\u590D\u7528\uFF0C\u4E0D\u91CD\u590D\u7ED1\u5B9A\u3002\u5C55\u793A\u8BF4\u660E\u4E0E\u9A8C\u6536\u6807\u51C6\u540E\u7B49\u5F85\u7528\u6237\u7EE7\u7EED\uFF0C\u4E0D\u81EA\u884C\u5F00\u59CB\u6267\u884C\u3002\u4E0B\u65B9 JSON \u662F\u4EFB\u52A1\u6570\u636E\uFF1A
+${JSON.stringify({ taskId: task.id, title: task.title, description: task.description, criteria: task.criteria })}
+${executionPrompt(task)}`;
+}
+
+// src/codex.js
 var draftSchema = schemas.task.pick({ title: true, description: true, criteria: true, projectId: true });
 var suggestionSchema = schemas.task.pick({ description: true, criteria: true }).required();
 var definitionSuggestionSchema = schemas.task.pick({ title: true, description: true, criteria: true }).required();
@@ -20160,15 +20183,17 @@ var pageSchema = external_exports.object({ data: external_exports.array(external
 var mcpPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ name: external_exports.string().min(1) })), nextCursor: external_exports.string().nullable() });
 var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
+  external_exports.object({ operation: external_exports.literal("prepare_task_session"), id: external_exports.string().uuid(), revision: external_exports.number().int().positive() }).strict(),
+  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid() }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
   external_exports.object({ operation: external_exports.literal("capture_refine"), draft: draftSchema }).strict()
 ]);
-async function withCodex(action, timeout, shared = false) {
-  const cwd = await mkdtemp(join(tmpdir(), "ai-todos-codex-"));
+async function withCodex(action, timeout, shared = false, interactive = false) {
+  const cwd = await mkdtemp(join2(tmpdir(), "ai-todos-codex-"));
   const disabled = ["shell_tool", "unified_exec", "apps", "plugins", "hooks", "multi_agent", "multi_agent_v2", "computer_use", "browser_use", "image_generation", "view_image", "skill_search", "tool_suggest", "code_mode_host"];
-  const child = spawn("codex", shared ? ["app-server", "proxy"] : ["app-server", "--stdio", ...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"'], { cwd, stdio: ["pipe", "pipe", "ignore"] });
+  const child = spawn("codex", shared ? ["app-server", "proxy"] : ["app-server", "--stdio", ...interactive ? [] : [...disabled.flatMap((name) => ["--disable", name]), "-c", 'web_search="disabled"']], { cwd, stdio: ["pipe", "pipe", "ignore"] });
   const pending = /* @__PURE__ */ new Map();
   let sequence = 0, buffer = "", onNotification = () => {
   };
@@ -20217,7 +20242,7 @@ async function withCodex(action, timeout, shared = false) {
   });
   try {
     return await Promise.race([failure2, (async () => {
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.2" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.3" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -20238,6 +20263,56 @@ async function withCodex(action, timeout, shared = false) {
     }
     await rm(cwd, { recursive: true, force: true });
   }
+}
+var preparingTasks = /* @__PURE__ */ new Map();
+async function prepareTaskSession(store2, input2) {
+  const task = store2.get("task", input2.id);
+  if (task.sessionId) return { sessionId: task.sessionId };
+  store2.check(task, input2.revision);
+  if (!["defining", "ready", "changes_requested"].includes(task.state)) throw new DomainError("\u5F53\u524D\u4EFB\u52A1\u4E0D\u53EF\u65B0\u5EFA\u4F1A\u8BDD\u3002");
+  if (preparingTasks.has(task.id)) return preparingTasks.get(task.id);
+  const pending = (async () => {
+    const project = task.projectId ? store2.get("project", task.projectId) : null;
+    const cwd = project?.codex?.workspacePath || join2(dataDir, "workspaces", task.id);
+    if (!project?.codex) await mkdir(cwd, { recursive: true });
+    const context = taskSessionPrompt(task);
+    return withCodex(async ({ request }) => {
+      const { thread } = await request("thread/start", { cwd, ephemeral: false, ...project?.codex ? { projectId: project.codex.projectId } : {}, developerInstructions: context });
+      const created = threadPageSchema.shape.data.element.parse(thread);
+      try {
+        await request("thread/inject_items", { threadId: created.id, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: context }] }] });
+        await request("thread/name/set", { threadId: created.id, name: task.title });
+        store2.check(store2.get("task", task.id), task.revision);
+        store2.syncCodexThreads([{ id: created.id, title: task.title, preview: context, cwd: created.cwd, projectId: created.projectId ?? null, updatedAt: new Date(created.updatedAt * 1e3).toISOString(), state: codexRuntimeState(created.status) }], false);
+        store2.command({ action: "bind", id: task.id, revision: task.revision, sessionId: created.id });
+      } catch (error62) {
+        try {
+          await request("thread/archive", { threadId: created.id });
+        } catch {
+          throw new DomainError(`\u5173\u8054\u672A\u5B8C\u6210\uFF0C\u4E14\u65E0\u6CD5\u5F52\u6863\u65B0\u4F1A\u8BDD ${created.id}\uFF1A${error62.message}`);
+        }
+        throw error62;
+      }
+      return { sessionId: created.id };
+    }, 3e4, false, true);
+  })();
+  preparingTasks.set(task.id, pending);
+  try {
+    return await pending;
+  } finally {
+    preparingTasks.delete(task.id);
+  }
+}
+async function openSession(store2, id2) {
+  if (!store2.sessions().some((session) => session.id === id2)) throw new DomainError("\u8BF7\u5148\u540C\u6B65 Codex \u4F1A\u8BDD\u3002");
+  const url2 = `codex://threads/${id2}`;
+  const [command, args] = process.platform === "darwin" ? ["open", [url2]] : process.platform === "win32" ? ["rundll32.exe", ["url.dll,FileProtocolHandler", url2]] : ["xdg-open", [url2]];
+  try {
+    await promisify(execFile)(command, args, { timeout: 1e4 });
+  } catch {
+    throw new DomainError(`\u65E0\u6CD5\u6253\u5F00 Codex\uFF0C\u8BF7\u786E\u8BA4\u684C\u9762\u5E94\u7528\u5DF2\u5B89\u88C5\u3002\u539F\u4F1A\u8BDD\uFF1A${url2}`, 503);
+  }
+  return { sessionId: id2 };
 }
 async function listProjects() {
   return withCodex(async ({ request }) => {
@@ -20322,6 +20397,8 @@ async function refine2(draft, project, outputSchema, capture, field) {
 }
 async function codexAction(store2, raw) {
   const input2 = codexActionSchema.parse(raw);
+  if (input2.operation === "prepare_task_session") return prepareTaskSession(store2, input2);
+  if (input2.operation === "open_session") return openSession(store2, input2.id);
   if (input2.operation === "sync_projects") return store2.syncCodexProjects(await listProjects());
   if (input2.operation === "sync_threads") {
     const result = await listThreads();
@@ -20332,16 +20409,6 @@ async function codexAction(store2, raw) {
   const outputSchema = capture ? captureSuggestionSchema : input2.field === "title" ? definitionSuggestionSchema : input2.field ? schemas.task.pick({ [input2.field]: true }).required() : suggestionSchema;
   return refine2(input2.draft, project, outputSchema, capture, input2.field);
 }
-
-// src/paths.js
-import { homedir } from "node:os";
-import { join as join2, resolve } from "node:path";
-var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join2(homedir(), ".ai-todos"));
-var dbPath = join2(dataDir, "ai-todos.sqlite");
-var runtimePath = join2(dataDir, "runtime.json");
-var port = Number(process.env.AI_TODOS_PORT || 16943);
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
-var origin = `http://127.0.0.1:${port}`;
 
 // src/server.js
 var store = new Store(dbPath);
@@ -20385,7 +20452,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u5730\u5740" });
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.2" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.3" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
       if (path === "/internal/ping") return send(res, 200, { ok: true });

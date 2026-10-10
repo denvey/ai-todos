@@ -2,23 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runtimeState, runtimeLabels, runtimeLabel, codexRuntimeState } from '../src/runtime.js';
 import { executionColumnForTask, executionColumnForSession, taskStatus, canConfirmAiSession, visibleExecutionSessions, boardDropDecision } from '../ui/execution-board.js';
-import { newSessionPrompt } from '../ui/codex-prompts.js';
+import { taskSessionPrompt } from '../ui/codex-prompts.js';
 
 const task = (state, ai) => ({ id: 'task', state, sessionId: ai?.id, ai });
 const runtime = state => ({ id: 'session', state, observedAt: '2026-10-10T00:00:00Z' });
 
-test('opening Codex reuses existing bindings and verifies new bindings before navigating', () => {
-  const prompt = newSessionPrompt({ id: 'task', revision: 1, title: '原任务' });
-  assert.match(prompt, /已有 sessionId.*打开该会话，不新建/);
-  assert.match(prompt, /ai_todos_snapshot\(\{syncThreads:true\}\)/);
-  assert.match(prompt, /已绑定同一 threadId 时继续/);
-  assert.match(prompt, /只有创建和关联均成功后才打开/);
-  assert.doesNotMatch(prompt, /ai_todos_codex/);
+test('task conversation context reuses the original task and waits for user input', () => {
+  const prompt = taskSessionPrompt({ id: 'task', revision: 1, title: '原任务' });
+  assert.match(prompt, /已有本会话关联时复用，不重复绑定/);
+  assert.match(prompt, /等待用户继续，不自行开始执行/);
   const session = runtime('running');
   const bound = task('defining', { ...session, mode: 'planning' });
   assert.equal(executionColumnForTask(bound), 'executing');
   assert.equal(taskStatus(bound), '正在规划');
   assert.deepEqual(visibleExecutionSessions([session], [bound]), []);
+  assert.deepEqual(visibleExecutionSessions([session], [{ ...bound, state: 'changes_requested' }]), []);
+  assert.equal(executionColumnForTask({ ...bound, state: 'changes_requested' }), 'executing');
+  assert.deepEqual(visibleExecutionSessions([session], [{ ...bound, state: 'awaiting_acceptance' }]), []);
+  assert.deepEqual(visibleExecutionSessions([session], [{ ...bound, ai: null }]), []);
 });
 
 test('all Xinmo runtime states and planning labels retain their board meaning', () => {

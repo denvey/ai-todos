@@ -75,3 +75,9 @@ Codex 会话同步迁移：参考心魔 execution-board.ts 和 AiSessionCard，�
 补充实际运行证据：通过官方 CLI /hooks 保存 ai-todos 的 8 个信任条目，hooks/list 返回全部 trusted。真实 CLI 会话 01a124f4-9aae-7633-9eae-8d116307e1e2 依次产生 SessionStart / idle、UserPromptSubmit / running、SessionEnd / ended，模型返回 OK。同时修正原生 MCP 配置不展开 ${PLUGIN_ROOT} 的问题，采用 cwd="." 和相对入口；安装后官方 mcpServerStatus/list 返回 5 个工具，toolsError 为 null。桌面当前会话实时状态仍未独立验证。
 
 新建会话入口：复用 MCP Apps ui/message，将明确的创建请求发送给当前宿主，要求其使用 create_thread 和 navigate_to_codex_page；由新会话通过可信 hooks 与现有 bind 关联原业务任务。保留版本核对、项目目录匹配和绑定状态限制。独立浏览器只能复制创建指令。没有新增后台 CLI 执行服务或调用私有 IPC；实际桌面消息触发创建仍待用户客户端验证。
+
+2026-10-11 / 0.1.3：用户反馈新会话在绑定前中断，造成任务与会话重复显示。打开入口改为本地服务使用官方 thread/start 创建持久会话、保存原任务上下文、通过现有 bind 关联，再由系统打开 Codex 深链接；不启动模型轮次。活跃任务的关联会话统一由任务卡片表示，待修改任务再次运行时也更新看板列；任务标题打开编辑弹窗，箭头保留展开摘要。已将用户原任务 27a2c5f4-f9d1-4ba7-b33a-de0428b957b2 绑定回已创建且可信观察到的会话 01a1273f-03e6-7b32-adc3-92a82ea006b3，没有新增业务任务或验收。
+
+定向检查 5 项通过，覆盖并发创建去重、关联、打开参数、版本冲突、失败归档、原任务状态与看板去重。真实 CLI 使用全新的隔离 CODEX_HOME 和数据库检查持久会话、标题与关联成功，无模型调用；thread/read 返回零执行轮次，任务仍为 defining。初次隔离检查因 CODEX_HOME 目录未创建而失败，补齐隔离目录后通过。实际本地页面点击标题打开 r2 编辑弹窗，名称、说明、标准均可编辑；打开已有会话按钮调用结束且没有错误。Computer Use 拒绝访问 com.openai.codex，因此原生窗口切页未确认。未重跑完整套件或验证 Windows/Linux 打开路径。
+
+预构建包与本机安装缓存 0.1.3 的页面 SHA-256 一致，本地服务 health 返回 0.1.3。为安装未发布的本地修复，临时将 ai-todos-local 来源切到本仓库，安装后已恢复原 GitHub 来源；未推送或发布远程版本。旧工作台缓存需要关闭后重新打开，旧 MCP 进程需要客户端重新加载插件。

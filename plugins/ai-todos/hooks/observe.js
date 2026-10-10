@@ -19883,7 +19883,7 @@ var Store = class {
       return { count: projects.length, added, updated };
     });
   }
-  syncCodexThreads(threads) {
+  syncCodexThreads(threads, complete = true) {
     return this.transaction(() => {
       const existing = new Map(this.sessions().map((session) => {
         const { state, ...stored } = session;
@@ -19905,7 +19905,7 @@ var Store = class {
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
       }
-      for (const previous of existing.values()) if (previous.catalogVisible && !seen.has(previous.id)) {
+      for (const previous of existing.values()) if (complete && previous.catalogVisible && !seen.has(previous.id)) {
         this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
       }
       return { count: seen.size, added, updated };

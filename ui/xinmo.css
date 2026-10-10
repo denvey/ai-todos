@@ -403,10 +403,12 @@
 .execution-card:hover { border-color: color-mix(in oklch, var(--accent) 38%, var(--line)); }
 .execution-card:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .execution-card__summary { min-width: 0; display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-.execution-card__summary > strong { flex: 1; min-width: 0; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.execution-card__summary > svg { flex: none; margin-top: 2px; color: var(--faint); transition: transform 140ms ease-out; }
-.execution-card__summary[aria-expanded="true"] > svg { transform: rotate(180deg); }
-.execution-card__summary[aria-expanded="true"] > strong { -webkit-line-clamp: unset; }
+.execution-card__title { flex: 1; min-width: 0; text-align: left; }
+.execution-card__title, .execution-card__expand { padding: 0; border: 0; background: transparent; color: inherit; }
+.execution-card__title > strong, .execution-card__summary > strong { flex: 1; min-width: 0; display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: 12px; font-weight: 650; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.execution-card__expand > svg, .execution-card__summary > svg { flex: none; margin-top: 2px; color: var(--faint); transition: transform 140ms ease-out; }
+.execution-card__expand[aria-expanded="true"] > svg, .execution-card__summary[aria-expanded="true"] > svg { transform: rotate(180deg); }
+.execution-card__summary:has([aria-expanded="true"]) strong, .execution-card__summary[aria-expanded="true"] > strong { -webkit-line-clamp: unset; }
 .execution-card__summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
 .execution-card__content { min-width: 0; display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
 .execution-card__content[hidden] { display: none; }

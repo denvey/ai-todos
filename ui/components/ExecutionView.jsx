@@ -21,14 +21,15 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
   return <article className="execution-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
     onDragStart={event => { dragged.current = true; onDragStart?.(event, task); }}
     onDragEnd={() => { onDragEnd?.(); setTimeout(() => { dragged.current = false; }, 0); }}>
-    <button type="button" className="execution-card__summary" aria-label={`展开任务 ${task.title}`} aria-expanded={expanded} aria-controls={`execution-task-${task.id}`} onClick={() => { if (!dragged.current) setExpanded(value => !value); }}>
-      <strong title={task.title}>{task.title}</strong><ChevronDown size={14} aria-hidden="true" />
-    </button>
+    <div className="execution-card__summary">
+      <button type="button" className="execution-card__title" disabled={busy} aria-label={`编辑任务 ${task.title}`} onClick={() => { if (!dragged.current) onOpenTask(task.id); }}><strong title={task.title}>{task.title}</strong></button>
+      <button type="button" className="execution-card__expand" disabled={busy} aria-label={`展开任务 ${task.title}`} aria-expanded={expanded} aria-controls={`execution-task-${task.id}`} onClick={() => { if (!dragged.current) setExpanded(value => !value); }}><ChevronDown size={14} aria-hidden="true" /></button>
+    </div>
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
       <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession(task.sessionId) : task.state === 'awaiting_acceptance' && onReviewTask ? onReviewTask(task) : onOpenTask(task.id)}><ListTodo size={12} />{task.state === 'awaiting_acceptance' ? '审阅交付' : handleRuntime ? '回原会话处理' : column === 'defining' ? '完善要求' : column === 'waiting_user' ? '处理任务' : active ? '查看进度' : '查看详情'}</button>
     </div>
-    <div className="execution-card__badges execution-card__actions">{!task.sessionId && <AiBadge task={task} />}{(task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><Code2 size={12} />打开 Codex</button>}</div>
+    <div className="execution-card__badges execution-card__actions">{(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <AiBadge task={task} />}{(task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><Code2 size={12} />打开 Codex</button>}</div>
     <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
       <div className="execution-card__body">
         <span className="execution-card__topline"><span>{priorityLabels[task.priority]}优先级</span><span>r{task.revision}</span></span>

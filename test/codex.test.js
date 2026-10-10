@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { Store } from '../src/domain.js';
+
+test('prepare binds once before opening; conflicts archive; creation never starts a turn', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'ai-todos-codex-check-'));
+  const oldPath = process.env.PATH, oldDir = process.env.AI_TODOS_DATA_DIR;
+  process.env.PATH = `${dir}:${oldPath}`; process.env.AI_TODOS_DATA_DIR = dir;
+  const store = new Store(join(dir, 'check.sqlite'));
+  t.after(() => { store.close(); process.env.PATH = oldPath; if (oldDir === undefined) delete process.env.AI_TODOS_DATA_DIR; else process.env.AI_TODOS_DATA_DIR = oldDir; rmSync(dir, { recursive: true, force: true }); });
+  const log = join(dir, 'requests.jsonl'), opened = join(dir, 'opened.json');
+  writeFileSync(join(dir, 'codex'), `#!${process.execPath}
+import { createInterface } from 'node:readline';
+import { appendFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  appendFileSync(${JSON.stringify(log)}, JSON.stringify(message) + '\\n');
+  if (message.id === undefined) return;
+  const result = message.method === 'thread/start' ? { thread: { id: randomUUID(), preview: '', cwd: message.params.cwd, ephemeral: false, updatedAt: 1791659803, status: { type: 'idle' } } } : {};
+  setTimeout(() => console.log(JSON.stringify({ id: message.id, result })), message.method === 'thread/start' ? 80 : 0);
+});
+`, { mode: 0o755 });
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32.exe' : 'xdg-open';
+  writeFileSync(join(dir, opener), `#!${process.execPath}\nimport { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(opened)}, JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
+  const { codexAction } = await import('../src/codex.js');
+  const task = store.create('task', { title: '原任务', criteria: '原标准' });
+  const prior = randomUUID(); store.syncCodexThreads([{ id: prior, title: '其他会话', preview: '', cwd: dir, updatedAt: '2026-10-10T00:00:00Z', state: 'idle' }]);
+  const action = { operation: 'prepare_task_session', id: task.id, revision: task.revision };
+  const [first, duplicate] = await Promise.all([codexAction(store, action), codexAction(store, action)]);
+  assert.deepEqual(first, duplicate);
+  assert.equal(store.get('task', task.id).sessionId, first.sessionId);
+  assert.equal(store.get('task', task.id).state, 'defining');
+  assert.equal(store.sessions().find(session => session.id === prior).catalogVisible, true);
+  assert.deepEqual(await codexAction(store, action), first);
+  await codexAction(store, { operation: 'open_session', id: first.sessionId });
+  assert.ok(JSON.parse(readFileSync(opened, 'utf8')).includes(`codex://threads/${first.sessionId}`));
+  await assert.rejects(codexAction(store, { operation: 'open_session', id: randomUUID() }), /请先同步/);
+  const stale = store.create('task', { title: '旧版本' });
+  store.update('task', stale, { title: '新版本' });
+  await assert.rejects(codexAction(store, { operation: 'prepare_task_session', id: stale.id, revision: stale.revision }), /数据已更新/);
+  const racing = store.create('task', { title: '并发编辑' });
+  const pending = codexAction(store, { operation: 'prepare_task_session', id: racing.id, revision: racing.revision });
+  store.update('task', racing, { title: '保留编辑' });
+  await assert.rejects(pending, /数据已更新/);
+  assert.equal(store.get('task', racing.id).sessionId, null);
+  const messages = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(messages.filter(message => message.method === 'thread/start').length, 2);
+  assert.equal(messages.filter(message => message.method === 'thread/archive').length, 1);
+  assert.ok(messages.some(message => message.method === 'thread/inject_items' && message.params.items[0].content[0].text.includes(task.id)));
+  assert.ok(!messages.some(message => message.method === 'turn/start'));
+});

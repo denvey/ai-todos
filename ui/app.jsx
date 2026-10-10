@@ -9,14 +9,14 @@ import { GoalsView } from './components/GoalsView.jsx';
 import { TodayView, DailyPlanEditor, dayPlans } from './components/TodayView.jsx';
 import { InboxView } from './components/InboxView.jsx';
 import { clock, dateInput, fmt, hours, labels, localDay, parseSchedule } from './format.js';
-import { executionPrompt, newSessionPrompt } from './codex-prompts.js';
+import { executionPrompt } from './codex-prompts.js';
 import { visibleExecutionSessions, executionColumnForSession } from './execution-board.js';
 import './xinmo.css';
 import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.2' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.3' }, {}, { autoResize: true }) : null;
 function applyDisplayName(locale) {
   const chinese = /^zh(?:-|$)/i.test(locale || navigator.language);
   document.title = chinese ? '任务 · 工作台' : 'Todos · Workspace';
@@ -45,9 +45,7 @@ async function openLocal(id) {
   else window.open(url, '_blank', 'noopener');
 }
 async function openCodexSession(id) {
-  const url = `codex://threads/${id}`;
-  if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error('宿主未允许打开原会话。'); }
-  else window.location.href = url;
+  await api('codex', { operation: 'open_session', id });
 }
 
 function EntityForm({ kind, entity = {}, parent, snapshot, busy, onSave, onDelete }) {
@@ -168,14 +166,13 @@ function Workspace() {
   });
   const prompt = id => run(async () => { const { task } = await api('task', { id }); open({ type: 'prompt', text: executionPrompt(task), returnTo: modalRef.current?.returnTo }); });
   const openCodex = task => run(async () => {
-    const { task: current } = await api('task', { id: task.id });
-    if (current.sessionId) { await openCodexSession(current.sessionId); return; }
-    if (current.revision !== task.revision || !['defining', 'ready', 'changes_requested'].includes(current.state)) throw new Error('任务已变化，请刷新后再打开 Codex。');
-    const text = newSessionPrompt(current, snapshotRef.current.projects.find(project => project.id === current.projectId));
-    if (!embedded) { open({ type: 'prompt', newSession: true, text, returnTo: modalRef.current }); return; }
-    const result = await bridge.sendMessage({ role: 'user', content: [{ type: 'text', text }] });
-    if (result.isError) throw new Error('宿主未能接收新建会话请求，请稍后重试。');
-    toast('已请求打开 Codex，创建并关联成功后任务会自动更新。');
+    const { sessionId } = await api('codex', { operation: 'prepare_task_session', id: task.id, revision: task.revision });
+    await refresh(true);
+    if (modalRef.current?.type === 'task' && modalRef.current.task?.id === task.id && !task.sessionId) {
+      const detail = await api('task', { id: task.id });
+      open({ type: 'task', ...detail, returnTo: modalRef.current.returnTo });
+    }
+    await openCodexSession(sessionId);
   });
   const syncProjects = () => run(async () => {
     const result = await api('codex', { operation: 'sync_projects' });
@@ -288,8 +285,8 @@ function Workspace() {
       modalTitle = '确认删除'; modalDescription = entity.title;
       modalBody = <div className="editor-details"><p>只有未执行且没有引用和时间记录的数据可以删除。已有执行记录的任务请取消。</p><div className="actions"><button disabled={busy} onClick={() => setModal(null)}>取消</button><button className="danger" disabled={busy} onClick={() => run(() => mutate({ action: 'delete', kind: modal.kind, id: entity.id, revision: entity.revision }), '已删除', true)}>确认删除</button></div></div>;
     } else if (modal.type === 'prompt') {
-      modalTitle = modal.newSession ? '打开 Codex' : '交给 Codex 执行'; modalDescription = modal.newSession ? '复制下面的指令，粘贴到 Codex 对话中发送。' : '发送指令不代表任务已经运行或交付。';
-      modalBody = <div className="editor-details"><p className="note">{modal.newSession ? 'Codex 侧边栏面板可直接发起创建；独立浏览器页需要把指令发送给 Codex。新会话会读取并关联原任务。' : '指令包含原任务 ID 和可信会话核对要求。'}</p><textarea aria-label={modal.newSession ? '新建会话指令' : '执行指令'} readOnly value={modal.text} className="execution-prompt" /><div className="actions"><button disabled={busy} onClick={() => run(async () => { try { await navigator.clipboard.writeText(modal.text); toast(modal.newSession ? '创建指令已复制，请粘贴到 Codex 发送' : '执行指令已复制'); } catch { document.querySelector('.execution-prompt').select(); toast('请使用复制快捷键复制选中的指令'); } })}>复制{modal.newSession ? '创建' : ''}指令</button>{embedded && <button className="primary" disabled={busy} onClick={() => run(async () => { const result = await bridge.sendMessage({ role: 'user', content: [{ type: 'text', text: modal.text }] }); if (result.isError) throw new Error('宿主拒绝发送，请复制指令到原会话'); }, '执行指令已交给当前对话', true)}>发送到当前对话</button>}</div></div>;
+      modalTitle = '交给 Codex 执行'; modalDescription = '发送指令不代表任务已经运行或交付。';
+      modalBody = <div className="editor-details"><p className="note">指令包含原任务 ID 和可信会话核对要求。</p><textarea aria-label="执行指令" readOnly value={modal.text} className="execution-prompt" /><div className="actions"><button disabled={busy} onClick={() => run(async () => { try { await navigator.clipboard.writeText(modal.text); toast('执行指令已复制'); } catch { document.querySelector('.execution-prompt').select(); toast('请使用复制快捷键复制选中的指令'); } })}>复制指令</button>{embedded && <button className="primary" disabled={busy} onClick={() => run(async () => { const result = await bridge.sendMessage({ role: 'user', content: [{ type: 'text', text: modal.text }] }); if (result.isError) throw new Error('宿主拒绝发送，请复制指令到原会话'); }, '执行指令已交给当前对话', true)}>发送到当前对话</button>}</div></div>;
     }
   }
   return <><main className={`main ${view.page === 'work' && view.mode === 'board' ? 'is-board' : ''} ${snapshot.focus.status !== 'idle' ? 'has-focus' : ''}`}>

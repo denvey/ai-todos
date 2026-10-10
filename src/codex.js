@@ -1,10 +1,13 @@
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { execFile, spawn } from 'node:child_process';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, normalize } from 'node:path';
 import { z } from 'zod';
 import { DomainError, schemas } from './domain.js';
 import { codexRuntimeState } from './runtime.js';
+import { dataDir } from './paths.js';
+import { taskSessionPrompt } from '../ui/codex-prompts.js';
 
 const draftSchema = schemas.task.pick({ title: true, description: true, criteria: true, projectId: true });
 const suggestionSchema = schemas.task.pick({ description: true, criteria: true }).required();
@@ -14,16 +17,18 @@ const pageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), na
 const mcpPageSchema = z.object({ data: z.array(z.object({ name: z.string().min(1) })), nextCursor: z.string().nullable() });
 const threadPageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: z.string().nullable().optional(), preview: z.string(), cwd: z.string().min(1).max(2000).refine(isAbsolute, '会话目录必须是绝对路径'), projectId: z.string().uuid().nullable().optional(), parentThreadId: z.string().nullable().optional(), ephemeral: z.boolean(), updatedAt: z.number().int().nonnegative(), status: z.object({ type: z.string(), activeFlags: z.array(z.string()).optional() }) })), nextCursor: z.string().nullable() });
 export const codexActionSchema = z.discriminatedUnion('operation', [
+  z.object({ operation: z.literal('prepare_task_session'), id: z.string().uuid(), revision: z.number().int().positive() }).strict(),
+  z.object({ operation: z.literal('open_session'), id: z.string().uuid() }).strict(),
   z.object({ operation: z.literal('sync_projects') }).strict(),
   z.object({ operation: z.literal('sync_threads') }).strict(),
   z.object({ operation: z.literal('refine'), draft: draftSchema, field: z.enum(['title', 'description', 'criteria']).optional() }).strict(),
   z.object({ operation: z.literal('capture_refine'), draft: draftSchema }).strict(),
 ]);
 
-async function withCodex(action, timeout, shared = false) {
+async function withCodex(action, timeout, shared = false, interactive = false) {
   const cwd = await mkdtemp(join(tmpdir(), 'ai-todos-codex-'));
   const disabled = ['shell_tool', 'unified_exec', 'apps', 'plugins', 'hooks', 'multi_agent', 'multi_agent_v2', 'computer_use', 'browser_use', 'image_generation', 'view_image', 'skill_search', 'tool_suggest', 'code_mode_host'];
-  const child = spawn('codex', shared ? ['app-server', 'proxy'] : ['app-server', '--stdio', ...disabled.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"'], { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = spawn('codex', shared ? ['app-server', 'proxy'] : ['app-server', '--stdio', ...(interactive ? [] : [...disabled.flatMap(name => ['--disable', name]), '-c', 'web_search="disabled"'])], { cwd, stdio: ['pipe', 'pipe', 'ignore'] });
   const pending = new Map(); let sequence = 0, buffer = '', onNotification = () => {};
   let fail;
   const failure = new Promise((_, reject) => { fail = reject; });
@@ -58,7 +63,7 @@ async function withCodex(action, timeout, shared = false) {
   });
   try {
     return await Promise.race([failure, (async () => {
-      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.2' }, capabilities: { experimentalApi: true } });
+      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.3' }, capabilities: { experimentalApi: true } });
       send({ method: 'initialized' });
       return action({ cwd, request, notifications: listener => { onNotification = listener; } });
     })()]);
@@ -72,6 +77,49 @@ async function withCodex(action, timeout, shared = false) {
     }
     await rm(cwd, { recursive: true, force: true });
   }
+}
+
+const preparingTasks = new Map();
+async function prepareTaskSession(store, input) {
+  const task = store.get('task', input.id);
+  if (task.sessionId) return { sessionId: task.sessionId };
+  store.check(task, input.revision);
+  if (!['defining', 'ready', 'changes_requested'].includes(task.state)) throw new DomainError('当前任务不可新建会话。');
+  if (preparingTasks.has(task.id)) return preparingTasks.get(task.id);
+  const pending = (async () => {
+    const project = task.projectId ? store.get('project', task.projectId) : null;
+    const cwd = project?.codex?.workspacePath || join(dataDir, 'workspaces', task.id);
+    if (!project?.codex) await mkdir(cwd, { recursive: true });
+    const context = taskSessionPrompt(task);
+    // Use durable history without starting a turn; the user continues in the desktop app.
+    return withCodex(async ({ request }) => {
+      const { thread } = await request('thread/start', { cwd, ephemeral: false, ...(project?.codex ? { projectId: project.codex.projectId } : {}), developerInstructions: context });
+      const created = threadPageSchema.shape.data.element.parse(thread);
+      try {
+        await request('thread/inject_items', { threadId: created.id, items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: context }] }] });
+        await request('thread/name/set', { threadId: created.id, name: task.title });
+        store.check(store.get('task', task.id), task.revision);
+        store.syncCodexThreads([{ id: created.id, title: task.title, preview: context, cwd: created.cwd, projectId: created.projectId ?? null, updatedAt: new Date(created.updatedAt * 1000).toISOString(), state: codexRuntimeState(created.status) }], false);
+        store.command({ action: 'bind', id: task.id, revision: task.revision, sessionId: created.id });
+      } catch (error) {
+        try { await request('thread/archive', { threadId: created.id }); }
+        catch { throw new DomainError(`关联未完成，且无法归档新会话 ${created.id}：${error.message}`); }
+        throw error;
+      }
+      return { sessionId: created.id };
+    }, 30000, false, true);
+  })();
+  preparingTasks.set(task.id, pending);
+  try { return await pending; } finally { preparingTasks.delete(task.id); }
+}
+
+async function openSession(store, id) {
+  if (!store.sessions().some(session => session.id === id)) throw new DomainError('请先同步 Codex 会话。');
+  const url = `codex://threads/${id}`;
+  const [command, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['rundll32.exe', ['url.dll,FileProtocolHandler', url]] : ['xdg-open', [url]];
+  try { await promisify(execFile)(command, args, { timeout: 10000 }); }
+  catch { throw new DomainError(`无法打开 Codex，请确认桌面应用已安装。原会话：${url}`, 503); }
+  return { sessionId: id };
 }
 
 async function listProjects() {
@@ -157,6 +205,8 @@ async function refine(draft, project, outputSchema, capture, field) {
 
 export async function codexAction(store, raw) {
   const input = codexActionSchema.parse(raw);
+  if (input.operation === 'prepare_task_session') return prepareTaskSession(store, input);
+  if (input.operation === 'open_session') return openSession(store, input.id);
   if (input.operation === 'sync_projects') return store.syncCodexProjects(await listProjects());
   if (input.operation === 'sync_threads') {
     const result = await listThreads();

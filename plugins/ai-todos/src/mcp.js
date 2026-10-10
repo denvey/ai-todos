@@ -36600,7 +36600,19 @@ var reviewSchema = external_exports.object({ id, revision, decision: external_ex
 var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 
 // src/codex.js
-import { basename, isAbsolute, join, normalize } from "node:path";
+import { basename, isAbsolute, join as join2, normalize } from "node:path";
+
+// src/paths.js
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join(homedir(), ".ai-todos"));
+var dbPath = join(dataDir, "ai-todos.sqlite");
+var runtimePath = join(dataDir, "runtime.json");
+var port = Number(process.env.AI_TODOS_PORT || 16943);
+if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
+var origin = `http://127.0.0.1:${port}`;
+
+// src/codex.js
 var draftSchema = schemas.task.pick({ title: true, description: true, criteria: true, projectId: true });
 var suggestionSchema = schemas.task.pick({ description: true, criteria: true }).required();
 var definitionSuggestionSchema = schemas.task.pick({ title: true, description: true, criteria: true }).required();
@@ -36609,6 +36621,8 @@ var pageSchema = external_exports.object({ data: external_exports.array(external
 var mcpPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ name: external_exports.string().min(1) })), nextCursor: external_exports.string().nullable() });
 var threadPageSchema = external_exports.object({ data: external_exports.array(external_exports.object({ id: external_exports.string().uuid(), name: external_exports.string().nullable().optional(), preview: external_exports.string(), cwd: external_exports.string().min(1).max(2e3).refine(isAbsolute, "\u4F1A\u8BDD\u76EE\u5F55\u5FC5\u987B\u662F\u7EDD\u5BF9\u8DEF\u5F84"), projectId: external_exports.string().uuid().nullable().optional(), parentThreadId: external_exports.string().nullable().optional(), ephemeral: external_exports.boolean(), updatedAt: external_exports.number().int().nonnegative(), status: external_exports.object({ type: external_exports.string(), activeFlags: external_exports.array(external_exports.string()).optional() }) })), nextCursor: external_exports.string().nullable() });
 var codexActionSchema = external_exports.discriminatedUnion("operation", [
+  external_exports.object({ operation: external_exports.literal("prepare_task_session"), id: external_exports.string().uuid(), revision: external_exports.number().int().positive() }).strict(),
+  external_exports.object({ operation: external_exports.literal("open_session"), id: external_exports.string().uuid() }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_projects") }).strict(),
   external_exports.object({ operation: external_exports.literal("sync_threads") }).strict(),
   external_exports.object({ operation: external_exports.literal("refine"), draft: draftSchema, field: external_exports.enum(["title", "description", "criteria"]).optional() }).strict(),
@@ -36620,18 +36634,6 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, mkdirSync, openSync, closeSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join as join3 } from "node:path";
-
-// src/paths.js
-import { homedir } from "node:os";
-import { join as join2, resolve } from "node:path";
-var dataDir = resolve(process.env.AI_TODOS_DATA_DIR || join2(homedir(), ".ai-todos"));
-var dbPath = join2(dataDir, "ai-todos.sqlite");
-var runtimePath = join2(dataDir, "runtime.json");
-var port = Number(process.env.AI_TODOS_PORT || 16943);
-if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_TODOS_PORT must be an integer between 1024 and 65535");
-var origin = `http://127.0.0.1:${port}`;
-
-// src/service-client.js
 var runtime;
 async function connect() {
   try {
@@ -36682,7 +36684,7 @@ async function service(path, value) {
 // src/mcp.js
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.2", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.3", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
@@ -36711,7 +36713,7 @@ server.registerTool("ai_todos_manage", {
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
   _meta: { ui: { visibility: ["model", "app"] } }
 }, guarded((args) => service("command", args.command)));
-server.registerTool("ai_todos_codex", { description: "Sync Codex projects and existing conversations, or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.", inputSchema: external_exports.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("codex", args.action)));
+server.registerTool("ai_todos_codex", { description: "Sync Codex projects and conversations, prepare and bind a task conversation, open an observed session in the desktop app, or generate a definition suggestion. Creating/opening a session does not execute or accept a task.", inputSchema: external_exports.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("codex", args.action)));
 server.registerTool("ai_todos_confirm_session", { description: "Record the human UI action confirming an unbound, stopped conversation complete at its displayed observation. This is not business task acceptance.", inputSchema: sessionConfirmSchema, annotations: { readOnlyHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("session-confirm", args)));
 G(server, "ai-todos workspace", uri, { description: "Persistent local productivity workspace" }, async () => ({ contents: [{ uri, mimeType: L, text: readFileSync2(new URL("../dist/app.html", import.meta.url), "utf8").replaceAll("__AI_TODOS_ORIGIN__", origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
 var transport = new StdioServerTransport();

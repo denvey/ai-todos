@@ -13,7 +13,6 @@ export function executionColumnForTask(task, runtime = task.ai) {
   if (task.state === 'cancelled') return 'cancelled';
   if (task.state === 'accepted') return 'completed';
   if (task.state === 'awaiting_acceptance') return 'waiting_user';
-  if (task.state === 'changes_requested') return 'changes_requested';
   if (runtime) {
     const state = runtimeState(runtime.state);
     if (runtime.mode === 'planning') {
@@ -53,8 +52,7 @@ export function visibleExecutionSessions(sessions, tasks) {
     if (task.sessionId !== session.id || task.state === 'cancelled') return false;
     if (task.state === 'accepted') return ['idle', 'completed'].includes(runtimeState(session.state))
       && Date.parse(task.review?.at) >= Date.parse(session.observedAt);
-    if (!task.ai || runtimeState(task.ai.state) !== runtimeState(session.state) || task.ai.id !== session.id) return false;
-    return executionColumnForTask(task) === executionColumnForSession(session);
+    return true;
   }));
 }
 export function boardDropDecision(task, target) {
