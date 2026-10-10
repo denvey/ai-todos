@@ -1,6 +1,6 @@
 // Adapted from Xinmo Desktop ExecutionView.tsx: callbacks replace desktop backend calls.
 import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo, ExternalLink, MessageSquarePlus, Check, Code2 } from 'lucide-react';
+import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, Code2 } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.js';
 import { runtimeState } from '../../src/runtime.js';
 import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, canConfirmAiSession, boardDropDecision } from '../execution-board.js';
@@ -12,7 +12,7 @@ export function AiBadge({ task }) {
   </span>;
 }
 
-export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onNewSession, onDragStart, onDragEnd }) {
+export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onDragStart, onDragEnd }) {
   const [expanded, setExpanded] = useState(false);
   const dragged = useRef(false);
   const column = executionColumnForTask(task), status = taskStatus(task);
@@ -28,7 +28,7 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
       <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession(task.sessionId) : task.state === 'awaiting_acceptance' && onReviewTask ? onReviewTask(task) : onOpenTask(task.id)}><ListTodo size={12} />{task.state === 'awaiting_acceptance' ? '审阅交付' : handleRuntime ? '回原会话处理' : column === 'defining' ? '完善要求' : column === 'waiting_user' ? '处理任务' : active ? '查看进度' : '查看详情'}</button>
     </div>
-    {!task.sessionId && <div className="execution-card__badges execution-card__actions"><AiBadge task={task} />{['defining', 'ready', 'changes_requested'].includes(task.state) && onNewSession && <button type="button" disabled={busy} onClick={() => onNewSession(task)}><MessageSquarePlus size={12} />新建 Codex 会话</button>}</div>}
+    <div className="execution-card__badges execution-card__actions">{!task.sessionId && <AiBadge task={task} />}{(task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><Code2 size={12} />打开 Codex</button>}</div>
     <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
       <div className="execution-card__body">
         <span className="execution-card__topline"><span>{priorityLabels[task.priority]}优先级</span><span>r{task.revision}</span></span>
@@ -36,7 +36,7 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
         {status !== labels[task.state] && <small>交付：{labels[task.state]}</small>}
         {task.description && <small>{task.description}</small>}
       </div>
-      <div className="execution-card__actions">{task.sessionId && onOpenSession && <button type="button" disabled={busy} onClick={() => onOpenSession(task.sessionId)}><ExternalLink size={12} />打开 Codex</button>}{task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask(task, 'reject')}>退回修改</button>}</div>
+      <div className="execution-card__actions">{task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask(task, 'reject')}>退回修改</button>}</div>
     </div>
   </article>;
 }
@@ -57,12 +57,12 @@ function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmS
   </article>;
 }
 
-export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onNewSession, onTransition, onError }) {
+export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onOpenCodex, onTransition, onError }) {
   const [dropTarget, setDropTarget] = useState(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState({});
   const endDrag = () => setDropTarget(null);
-  const renderTask = task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onNewSession={onNewSession}
+  const renderTask = task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
   const renderSession = session => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos-session', JSON.stringify({ id: value.id, observedAt: value.observedAt, event: value.event, turnId: value.turnId, catalogUpdatedAt: value.catalogUpdatedAt })); }} onDragEnd={endDrag} />;
@@ -153,7 +153,7 @@ function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onResche
   </button>;
 }
 
-export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onNewSession, onReschedule }) {
+export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onReschedule }) {
   const [zoom, setZoom] = useState('day');
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
   const [anchor, setAnchor] = useState(todayAnchor);
@@ -173,7 +173,7 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
         {!scheduled.length && <p className="empty-state">暂无已排期任务，在任务详情中设置计划时间。</p>}
       </div></div>
     </div>
-    <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>未排期</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onNewSession={onNewSession} />)}</div>{!unscheduled.length && <p>所有活动任务均已排期。</p>}</section>
+    <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>未排期</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} />)}</div>{!unscheduled.length && <p>所有活动任务均已排期。</p>}</section>
     <p className="muted">拖动移动，边缘调整起止；键盘 ← → 移动一天，Shift 调整结束。保存使用实际读取的 revision。</p>
   </div>;
 }

@@ -34,7 +34,7 @@ const server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: '仅允许本机回环地址' });
     const path = new URL(req.url, origin).pathname;
-    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.1' });
+    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.2' });
     if (path.startsWith('/internal/')) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: 'Unauthorized' });
       if (path === '/internal/ping') return send(res, 200, { ok: true });

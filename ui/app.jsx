@@ -16,7 +16,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.1' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.2' }, {}, { autoResize: true }) : null;
 function applyDisplayName(locale) {
   const chinese = /^zh(?:-|$)/i.test(locale || navigator.language);
   document.title = chinese ? '任务 · 工作台' : 'Todos · Workspace';
@@ -43,6 +43,11 @@ async function openLocal(id) {
   const url = `${localOrigin}/${id ? `#task=${id}` : ''}`;
   if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error(`宿主未允许打开本地链接，请手动打开 ${url}`); }
   else window.open(url, '_blank', 'noopener');
+}
+async function openCodexSession(id) {
+  const url = `codex://threads/${id}`;
+  if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error('宿主未允许打开原会话。'); }
+  else window.location.href = url;
 }
 
 function EntityForm({ kind, entity = {}, parent, snapshot, busy, onSave, onDelete }) {
@@ -162,14 +167,15 @@ function Workspace() {
     open({ type: 'review', ...detail, decision, returnTo: modalRef.current?.returnTo });
   });
   const prompt = id => run(async () => { const { task } = await api('task', { id }); open({ type: 'prompt', text: executionPrompt(task), returnTo: modalRef.current?.returnTo }); });
-  const newSession = task => run(async () => {
+  const openCodex = task => run(async () => {
     const { task: current } = await api('task', { id: task.id });
-    if (current.revision !== task.revision || current.sessionId || !['defining', 'ready', 'changes_requested'].includes(current.state)) throw new Error('任务已变化，请刷新后再创建会话。');
+    if (current.sessionId) { await openCodexSession(current.sessionId); return; }
+    if (current.revision !== task.revision || !['defining', 'ready', 'changes_requested'].includes(current.state)) throw new Error('任务已变化，请刷新后再打开 Codex。');
     const text = newSessionPrompt(current, snapshotRef.current.projects.find(project => project.id === current.projectId));
     if (!embedded) { open({ type: 'prompt', newSession: true, text, returnTo: modalRef.current }); return; }
     const result = await bridge.sendMessage({ role: 'user', content: [{ type: 'text', text }] });
     if (result.isError) throw new Error('宿主未能接收新建会话请求，请稍后重试。');
-    toast('已请求新建 Codex 会话，关联成功后这里会自动更新。');
+    toast('已请求打开 Codex，创建并关联成功后任务会自动更新。');
   });
   const syncProjects = () => run(async () => {
     const result = await api('codex', { operation: 'sync_projects' });
@@ -184,11 +190,7 @@ function Workspace() {
   const syncWorkspace = () => run(async () => {
     const result = await syncThreads(); toast(`已更新 Codex 会话目录，共 ${result.count} 个（含历史会话）。${result.transport === 'history' ? '宿主实时接口不可用，运行状态由可信 hooks 补充。' : ''}`);
   });
-  const openSession = id => run(async () => {
-    const url = `codex://threads/${id}`;
-    if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error('宿主未允许打开原会话。'); }
-    else window.location.href = url;
-  });
+  const openSession = id => run(() => openCodexSession(id));
   const confirmSession = session => run(async () => {
     await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
     await refresh(true);
@@ -264,7 +266,7 @@ function Workspace() {
         onSave={data => run(async () => { await mutate(task ? { action: 'update', kind: 'task', id: task.id, revision: task.revision, data } : { action: 'create', kind: 'task', data, requestId: modal.requestId, ...(modal.planDate ? { planDate: modal.planDate } : {}) }); modal.onCreated?.(); }, modal.planDate ? '任务已加入今天' : '任务已保存', true)}
         onTransition={state => transition(task.id, task.revision, state, true)}
         onBind={sessionId => run(async () => { await mutate({ action: 'bind', id: task.id, revision: task.revision, sessionId }); const detail = await api('task', { id: task.id }); open({ type: 'task', ...detail, returnTo: modal.returnTo }); }, '关联已保存')}
-        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onNewSession={() => newSession(task)} onDelete={() => deleteEntity('task', task)} />;
+        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onOpenCodex={() => openCodex(task)} onDelete={() => deleteEntity('task', task)} />;
     } else if (modal.type === 'daily_plan') {
       modalTitle = '安排今天'; modalDescription = `${modal.date} · 勾选任务加入今天`;
       modalBody = <DailyPlanEditor snapshot={snapshot} plans={modal.plans} initial={modal.draft} busy={busy} onCreateTask={() => createToday()} onInbox={openInbox}
@@ -286,7 +288,7 @@ function Workspace() {
       modalTitle = '确认删除'; modalDescription = entity.title;
       modalBody = <div className="editor-details"><p>只有未执行且没有引用和时间记录的数据可以删除。已有执行记录的任务请取消。</p><div className="actions"><button disabled={busy} onClick={() => setModal(null)}>取消</button><button className="danger" disabled={busy} onClick={() => run(() => mutate({ action: 'delete', kind: modal.kind, id: entity.id, revision: entity.revision }), '已删除', true)}>确认删除</button></div></div>;
     } else if (modal.type === 'prompt') {
-      modalTitle = modal.newSession ? '新建 Codex 会话' : '交给 Codex 执行'; modalDescription = modal.newSession ? '复制下面的创建指令，粘贴到 Codex 对话中发送。' : '发送指令不代表任务已经运行或交付。';
+      modalTitle = modal.newSession ? '打开 Codex' : '交给 Codex 执行'; modalDescription = modal.newSession ? '复制下面的指令，粘贴到 Codex 对话中发送。' : '发送指令不代表任务已经运行或交付。';
       modalBody = <div className="editor-details"><p className="note">{modal.newSession ? 'Codex 侧边栏面板可直接发起创建；独立浏览器页需要把指令发送给 Codex。新会话会读取并关联原任务。' : '指令包含原任务 ID 和可信会话核对要求。'}</p><textarea aria-label={modal.newSession ? '新建会话指令' : '执行指令'} readOnly value={modal.text} className="execution-prompt" /><div className="actions"><button disabled={busy} onClick={() => run(async () => { try { await navigator.clipboard.writeText(modal.text); toast(modal.newSession ? '创建指令已复制，请粘贴到 Codex 发送' : '执行指令已复制'); } catch { document.querySelector('.execution-prompt').select(); toast('请使用复制快捷键复制选中的指令'); } })}>复制{modal.newSession ? '创建' : ''}指令</button>{embedded && <button className="primary" disabled={busy} onClick={() => run(async () => { const result = await bridge.sendMessage({ role: 'user', content: [{ type: 'text', text: modal.text }] }); if (result.isError) throw new Error('宿主拒绝发送，请复制指令到原会话'); }, '执行指令已交给当前对话', true)}>发送到当前对话</button>}</div></div>;
     }
   }
@@ -305,7 +307,7 @@ function Workspace() {
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? '已归档，可在收件箱底部恢复' : '已恢复到收件箱')} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div><span className="muted">{filtered.length} 项任务 · {boardSessionCount} 个看板会话</span></div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
       {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">实时状态尚未接通，当前只同步了历史会话。请在终端运行 <code>codex</code>，输入 <code>/hooks</code>，审阅并信任 ai-todos 插件的 hooks。然后重新打开需要跟踪的会话；收到运行事件后会自动显示在“进行中”。</p>}
-      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onNewSession={newSession} onReschedule={reschedule} />}
+      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenCodex={openCodex} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onOpenCodex={openCodex} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">已取消（{filtered.filter(task => task.state === 'cancelled').length}）</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

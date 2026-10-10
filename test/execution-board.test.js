@@ -2,9 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runtimeState, runtimeLabels, runtimeLabel, codexRuntimeState } from '../src/runtime.js';
 import { executionColumnForTask, executionColumnForSession, taskStatus, canConfirmAiSession, visibleExecutionSessions, boardDropDecision } from '../ui/execution-board.js';
+import { newSessionPrompt } from '../ui/codex-prompts.js';
 
 const task = (state, ai) => ({ id: 'task', state, sessionId: ai?.id, ai });
 const runtime = state => ({ id: 'session', state, observedAt: '2026-10-10T00:00:00Z' });
+
+test('opening Codex reuses existing bindings and verifies new bindings before navigating', () => {
+  const prompt = newSessionPrompt({ id: 'task', revision: 1, title: '原任务' });
+  assert.match(prompt, /已有 sessionId.*打开该会话，不新建/);
+  assert.match(prompt, /ai_todos_snapshot\(\{syncThreads:true\}\)/);
+  assert.match(prompt, /已绑定同一 threadId 时继续/);
+  assert.match(prompt, /只有创建和关联均成功后才打开/);
+  assert.doesNotMatch(prompt, /ai_todos_codex/);
+  const session = runtime('running');
+  const bound = task('defining', { ...session, mode: 'planning' });
+  assert.equal(executionColumnForTask(bound), 'executing');
+  assert.equal(taskStatus(bound), '正在规划');
+  assert.deepEqual(visibleExecutionSessions([session], [bound]), []);
+});
 
 test('all Xinmo runtime states and planning labels retain their board meaning', () => {
   const expected = {

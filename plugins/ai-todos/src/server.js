@@ -20217,7 +20217,7 @@ async function withCodex(action, timeout, shared = false) {
   });
   try {
     return await Promise.race([failure2, (async () => {
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.1" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.2" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -20385,7 +20385,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u5730\u5740" });
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.1" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.2" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
       if (path === "/internal/ping") return send(res, 200, { ok: true });

@@ -36682,7 +36682,7 @@ async function service(path, value) {
 // src/mcp.js
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.1", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.2", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
@@ -36700,7 +36700,10 @@ j(server, "ai_todos_open", {
   annotations: { readOnlyHint: true, openWorldHint: false },
   _meta: { ui: { resourceUri: uri }, "openai/ui": { entrypoints: [{ type: "global" }, { type: "thread" }] } }
 }, guarded(async () => ({ ...await service("state"), browserUrl: origin })));
-server.registerTool("ai_todos_snapshot", { description: "Read persistent tasks, inbox captures, projects, OKRs, plans, trusted hook sessions, focus and reminders. Observed AI state is independent of task business state.", inputSchema: external_exports.object({}), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ["model", "app"] } } }, guarded(() => service("state")));
+server.registerTool("ai_todos_snapshot", { description: "Read persistent tasks, inbox captures, projects, OKRs, plans, trusted hook sessions, focus and reminders. Set syncThreads=true to refresh the official existing-session catalog before reading, for binding a host-created conversation. This does not create or execute conversations. Observed AI state is independent of task business state.", inputSchema: external_exports.object({ syncThreads: external_exports.boolean().optional() }), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ["model", "app"] } } }, guarded(async (args) => {
+  if (args.syncThreads) await service("codex", { operation: "sync_threads" });
+  return service("state");
+}));
 server.registerTool("ai_todos_task", { description: "Read one task and its delivery/acceptance history. Use the returned revision for a subsequent mutation. Never replace a human-reviewed revision with a newer one.", inputSchema: external_exports.object({ id: external_exports.string().uuid() }), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ["model", "app"] } } }, guarded((args) => service("task", args)));
 server.registerTool("ai_todos_manage", {
   description: "Create/update/delete task, inbox capture, project, objective, keyResult or plan. create_tasks atomically creates tasks and adds them to planDate. promote converts an inbox capture to a task, optionally adding it to planDate. daily_plan selects the union of tasks for one date; plans must contain every plan ID and revision actually read for that date. Creation/promotion requestId is a UUID generated once and reused on retries. Bind only an official API-synced or hook-observed session ID; transition defining \u2192 ready \u2192 executing; submit real delivery summary and absolute-path/HTTP(S) evidence; manage persisted focus/settings/reminders. All updates require the revision actually read. Ready requires acceptance criteria. Stop is never delivery or acceptance. No accept/reject operation is available to AI: people must review evidence in the local UI. Do not infer acceptance, forge evidence or session IDs. Starting execution records intent and does not start Codex by itself.",

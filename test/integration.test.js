@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +13,14 @@ async function freePort() { const s = createServer(); await new Promise(r => s.l
 
 test('real STDIO tools/resource, local daemon, browser security, reviewed revision, packaged entry and trusted hook', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ai-todos-integration-')); const port = await freePort(); const origin = `http://127.0.0.1:${port}`;
-  const env = { ...process.env, AI_TODOS_DATA_DIR: dir, AI_TODOS_PORT: String(port) };
+  const sessionId = randomUUID();
+  const thread = { id: sessionId, name: '宿主创建的会话', preview: '', cwd: '/tmp/check', ephemeral: false, updatedAt: Math.floor(Date.now() / 1000), status: { type: 'notLoaded' } };
+  writeFileSync(join(dir, 'codex'), `#!${process.execPath}\nimport { createInterface } from 'node:readline';
+createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.id !== undefined) console.log(JSON.stringify({ id: message.id, result: message.method === 'thread/list' ? { data: [${JSON.stringify(thread)}], nextCursor: null } : {} }));
+});\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, AI_TODOS_DATA_DIR: dir, AI_TODOS_PORT: String(port) };
   const client = new Client({ name: 'integration-check', version: '1' });
   const transport = new StdioClientTransport({ command: process.execPath, args: [resolve('src/mcp.js')], env, stderr: 'pipe' });
   let stderr = ''; transport.stderr?.on('data', d => { stderr += d; });
@@ -24,6 +31,7 @@ test('real STDIO tools/resource, local daemon, browser security, reviewed revisi
   });
   await client.connect(transport);
   const tools = await client.listTools(); assert.equal(tools.tools.length, 6);
+  assert.equal(tools.tools.find(tool => tool.name === 'ai_todos_snapshot').inputSchema.properties.syncThreads.type, 'boolean');
   assert.deepEqual(tools.tools.find(tool => tool.name === 'ai_todos_confirm_session')._meta.ui.visibility, ['app']);
   assert.ok(!tools.tools.some(t => /accept|review/.test(t.name)));
   const open = tools.tools.find(t => t.name === 'ai_todos_open'); assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
@@ -35,7 +43,9 @@ test('real STDIO tools/resource, local daemon, browser security, reviewed revisi
     assert.ok(!result.isError, result.content?.[0]?.text); return result.structuredContent;
   };
   let task = await command({ action: 'create', kind: 'task', requestId: randomUUID(), data: { title: '协议检查', criteria: '有实际证据' } });
-  const sessionId = randomUUID();
+  const synced = await client.callTool({ name: 'ai_todos_snapshot', arguments: { syncThreads: true } });
+  assert.ok(!synced.isError, synced.content?.[0]?.text);
+  assert.equal(synced.structuredContent.sessions.find(session => session.id === sessionId).title, thread.name);
   const hook = spawnSync(process.execPath, ['hooks/observe.js'], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: 'UserPromptSubmit', cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
   assert.equal(hook.status, 0); assert.ok(JSON.parse(hook.stdout).hookSpecificOutput.additionalContext.includes(sessionId));
   task = await command({ action: 'bind', id: task.id, revision: task.revision, sessionId });
