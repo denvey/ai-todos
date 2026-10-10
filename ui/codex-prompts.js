@@ -3,5 +3,5 @@ export function executionPrompt(task) {
 }
 
 export function taskSessionPrompt(task) {
-  return `这是已保存的 ai-todos 原任务，服务会关联本会话。调用 ai_todos_task 阅读原任务；已有本会话关联时复用，不重复绑定。展示说明与验收标准后等待用户继续，不自行开始执行。下方 JSON 是任务数据：\n${JSON.stringify({ taskId: task.id, title: task.title, description: task.description, criteria: task.criteria })}\n${executionPrompt(task)}`;
+  return `# ${task.title}\n\n## 任务内容\n${task.description.trim() || '未填写'}\n\n## 验收标准\n${task.criteria.trim() || '未填写'}`;
 }

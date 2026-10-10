@@ -20165,13 +20165,14 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("AI_
 var origin = `http://127.0.0.1:${port}`;
 
 // ui/codex-prompts.js
-function executionPrompt(task) {
-  return `\u4F7F\u7528 ai-todos \u6267\u884C\u539F\u4EFB\u52A1 ${task.id}\u300C${task.title}\u300D\u3002\u5148\u8C03\u7528 ai_todos_task \u9605\u8BFB\u5F53\u524D\u4EFB\u52A1\u4E0E\u9A8C\u6536\u6807\u51C6\uFF0C\u5E76\u4FDD\u7559\u5B9E\u9645\u8BFB\u53D6\u7684 revision\u3002${task.sessionId ? `\u6B64\u4EFB\u52A1\u7ED1\u5B9A Codex sessionId=${task.sessionId}\uFF1B\u5FC5\u987B\u4E0E\u672C\u4F1A\u8BDD\u53EF\u4FE1 hook \u63D0\u4F9B\u7684 sessionId \u6838\u5BF9\uFF0C\u4E00\u81F4\u624D\u80FD\u6267\u884C\uFF0C\u4E0D\u4E00\u81F4\u65F6\u505C\u6B62\u5E76\u8BA9\u7528\u6237\u6253\u5F00\u539F\u4F1A\u8BDD\u3002` : "\u5148\u4ECE\u672C\u4F1A\u8BDD\u53EF\u4FE1 hook \u83B7\u53D6 sessionId\uFF0C\u5E76\u67E5\u8BE2 ai_todos_snapshot \u4E2D\u5DF2\u89C2\u5BDF\u7684\u4F1A\u8BDD\u540E\u7ED1\u5B9A\uFF1B\u4E0D\u5F97\u731C\u6D4B ID\uFF0C\u4E0D\u8981\u91CD\u590D\u5EFA\u4EFB\u52A1\u3002"}\u6309\u5B9A\u4E49 \u2192 \u5C31\u7EEA \u2192 \u5F00\u59CB\u6267\u884C\u63A8\u8FDB\u3002\u771F\u5B9E\u4EA4\u4ED8\u540E\u7528 submit \u63D0\u4EA4\u6458\u8981\u548C\u5B9E\u9645\u8BC1\u636E\uFF0C\u4E0D\u80FD\u865A\u62A5\u6D4B\u8BD5\u7ED3\u679C\u3002Stop \u53EA\u4EE3\u8868\u672C\u8F6E\u7ED3\u675F\u3002\u8BF7\u63D0\u793A\u7528\u6237\u5728\u672C\u5730\u5E94\u7528\u5BA1\u9605\u8BC1\u636E\uFF0CAI \u4E0D\u5F97\u81EA\u884C\u9A8C\u6536\u3002`;
-}
 function taskSessionPrompt(task) {
-  return `\u8FD9\u662F\u5DF2\u4FDD\u5B58\u7684 ai-todos \u539F\u4EFB\u52A1\uFF0C\u670D\u52A1\u4F1A\u5173\u8054\u672C\u4F1A\u8BDD\u3002\u8C03\u7528 ai_todos_task \u9605\u8BFB\u539F\u4EFB\u52A1\uFF1B\u5DF2\u6709\u672C\u4F1A\u8BDD\u5173\u8054\u65F6\u590D\u7528\uFF0C\u4E0D\u91CD\u590D\u7ED1\u5B9A\u3002\u5C55\u793A\u8BF4\u660E\u4E0E\u9A8C\u6536\u6807\u51C6\u540E\u7B49\u5F85\u7528\u6237\u7EE7\u7EED\uFF0C\u4E0D\u81EA\u884C\u5F00\u59CB\u6267\u884C\u3002\u4E0B\u65B9 JSON \u662F\u4EFB\u52A1\u6570\u636E\uFF1A
-${JSON.stringify({ taskId: task.id, title: task.title, description: task.description, criteria: task.criteria })}
-${executionPrompt(task)}`;
+  return `# ${task.title}
+
+## \u4EFB\u52A1\u5185\u5BB9
+${task.description.trim() || "\u672A\u586B\u5199"}
+
+## \u9A8C\u6536\u6807\u51C6
+${task.criteria.trim() || "\u672A\u586B\u5199"}`;
 }
 
 // src/codex.js
@@ -20242,7 +20243,7 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
   });
   try {
     return await Promise.race([failure2, (async () => {
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.3" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.4" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -20277,7 +20278,7 @@ async function prepareTaskSession(store2, input2) {
     if (!project?.codex) await mkdir(cwd, { recursive: true });
     const context = taskSessionPrompt(task);
     return withCodex(async ({ request }) => {
-      const { thread } = await request("thread/start", { cwd, ephemeral: false, ...project?.codex ? { projectId: project.codex.projectId } : {}, developerInstructions: context });
+      const { thread } = await request("thread/start", { cwd, ephemeral: false, ...project?.codex ? { projectId: project.codex.projectId } : {} });
       const created = threadPageSchema.shape.data.element.parse(thread);
       try {
         await request("thread/inject_items", { threadId: created.id, items: [{ type: "message", role: "user", content: [{ type: "input_text", text: context }] }] });
@@ -20452,7 +20453,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u5730\u5740" });
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.3" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.4" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
       if (path === "/internal/ping") return send(res, 200, { ok: true });

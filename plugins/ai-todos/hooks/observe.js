@@ -20156,7 +20156,12 @@ try {
   const store = new Store(dbPath);
   try {
     const session = store.observe(event);
-    const output2 = event.hook_event_name === "SessionStart" || event.hook_event_name === "UserPromptSubmit" ? { hookSpecificOutput: { hookEventName: event.hook_event_name, additionalContext: `ai-todos \u53EF\u4FE1 Codex sessionId=${session.id}\u3002\u53EF\u7528 ai_todos_snapshot \u67E5\u8BE2\u540E\u7ED1\u5B9A\u539F\u4EFB\u52A1\uFF1BStop \u4EC5\u7ED3\u675F\u4E00\u8F6E\uFF0C\u771F\u5B9E\u4EA4\u4ED8\u9700\u8BC1\u636E\uFF0C\u4EBA\u9A8C\u6536\u9700\u660E\u786E\u786E\u8BA4\u3002` } } : {};
+    let output2 = {};
+    if (event.hook_event_name === "SessionStart" || event.hook_event_name === "UserPromptSubmit") {
+      const task = store.all("task").find((task2) => task2.sessionId === session.id && task2.state !== "cancelled");
+      const context = task ? `\u5DF2\u5173\u8054\u539F\u4EFB\u52A1 taskId=${task.id}\u3002\u4F7F\u7528 ai-todos \u6280\u80FD\uFF0C\u5148\u8C03\u7528 ai_todos_task \u8BFB\u53D6\u5F53\u524D\u4EFB\u52A1\u4E0E\u9A8C\u6536\u6807\u51C6\uFF0C\u590D\u7528\u5DF2\u6709\u7ED1\u5B9A\uFF1B\u4EC5\u6309\u7528\u6237\u8BF7\u6C42\u63A8\u8FDB\u3002` : "\u53EF\u7528 ai_todos_snapshot \u67E5\u8BE2\u540E\u7ED1\u5B9A\u539F\u4EFB\u52A1\u3002";
+      output2 = { hookSpecificOutput: { hookEventName: event.hook_event_name, additionalContext: `ai-todos \u53EF\u4FE1 Codex sessionId=${session.id}\u3002${context}Stop \u4EC5\u7ED3\u675F\u4E00\u8F6E\uFF0C\u771F\u5B9E\u4EA4\u4ED8\u9700\u8BC1\u636E\uFF0C\u4EBA\u9A8C\u6536\u9700\u660E\u786E\u786E\u8BA4\u3002` } };
+    }
     process.stdout.write(JSON.stringify(output2));
   } finally {
     store.close();

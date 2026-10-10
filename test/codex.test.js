@@ -51,6 +51,8 @@ createInterface({ input: process.stdin }).on('line', line => {
   const messages = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(messages.filter(message => message.method === 'thread/start').length, 2);
   assert.equal(messages.filter(message => message.method === 'thread/archive').length, 1);
-  assert.ok(messages.some(message => message.method === 'thread/inject_items' && message.params.items[0].content[0].text.includes(task.id)));
+  const taskMessage = messages.find(message => message.method === 'thread/inject_items' && message.params.threadId === first.sessionId);
+  assert.equal(taskMessage.params.items[0].content[0].text, '# 原任务\n\n## 任务内容\n未填写\n\n## 验收标准\n原标准');
+  assert.ok(messages.filter(message => message.method === 'thread/start').every(message => !('developerInstructions' in message.params)));
   assert.ok(!messages.some(message => message.method === 'turn/start'));
 });

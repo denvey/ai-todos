@@ -36684,7 +36684,7 @@ async function service(path, value) {
 // src/mcp.js
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.3", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.4", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {

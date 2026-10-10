@@ -63,7 +63,7 @@ async function withCodex(action, timeout, shared = false, interactive = false) {
   });
   try {
     return await Promise.race([failure, (async () => {
-      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.3' }, capabilities: { experimentalApi: true } });
+      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.4' }, capabilities: { experimentalApi: true } });
       send({ method: 'initialized' });
       return action({ cwd, request, notifications: listener => { onNotification = listener; } });
     })()]);
@@ -91,9 +91,9 @@ async function prepareTaskSession(store, input) {
     const cwd = project?.codex?.workspacePath || join(dataDir, 'workspaces', task.id);
     if (!project?.codex) await mkdir(cwd, { recursive: true });
     const context = taskSessionPrompt(task);
-    // Use durable history without starting a turn; the user continues in the desktop app.
+    // Hooks resolve the bound task when the user continues in the desktop app.
     return withCodex(async ({ request }) => {
-      const { thread } = await request('thread/start', { cwd, ephemeral: false, ...(project?.codex ? { projectId: project.codex.projectId } : {}), developerInstructions: context });
+      const { thread } = await request('thread/start', { cwd, ephemeral: false, ...(project?.codex ? { projectId: project.codex.projectId } : {}) });
       const created = threadPageSchema.shape.data.element.parse(thread);
       try {
         await request('thread/inject_items', { threadId: created.id, items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: context }] }] });

@@ -48,7 +48,19 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.equal(synced.structuredContent.sessions.find(session => session.id === sessionId).title, thread.name);
   const hook = spawnSync(process.execPath, ['hooks/observe.js'], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: 'UserPromptSubmit', cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
   assert.equal(hook.status, 0); assert.ok(JSON.parse(hook.stdout).hookSpecificOutput.additionalContext.includes(sessionId));
+  assert.ok(!JSON.parse(hook.stdout).hookSpecificOutput.additionalContext.includes(task.id));
   task = await command({ action: 'bind', id: task.id, revision: task.revision, sessionId });
+  for (const path of ['hooks/observe.js', 'plugins/ai-todos/hooks/observe.js']) {
+    for (const event of ['SessionStart', 'UserPromptSubmit']) {
+      const boundHook = spawnSync(process.execPath, [path], { env, input: JSON.stringify({ session_id: sessionId, hook_event_name: event, cwd: '/tmp/check', turn_id: 'test-turn' }), encoding: 'utf8' });
+      assert.equal(boundHook.status, 0);
+      const context = JSON.parse(boundHook.stdout).hookSpecificOutput.additionalContext;
+      assert.ok(context.includes(sessionId)); assert.ok(context.includes(`taskId=${task.id}`));
+      assert.match(context, /ai_todos_task.*复用已有绑定/);
+      assert.ok(!context.includes(task.title)); assert.ok(!context.includes(task.criteria));
+    }
+  }
+  assert.equal((await client.callTool({ name: 'ai_todos_task', arguments: { id: task.id } })).structuredContent.task.revision, task.revision);
   task = await command({ action: 'transition', id: task.id, revision: task.revision, state: 'ready' });
   task = await command({ action: 'transition', id: task.id, revision: task.revision, state: 'executing' });
   task = await command({ action: 'submit', id: task.id, revision: task.revision, summary: '协议真实调用成功', evidence: [{ label: '测试证据', uri: '/tmp/check.txt' }] });
