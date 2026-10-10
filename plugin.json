@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai-todos",
+  "version": "0.1.0",
+  "description": "独立本地任务、项目、OKR、计划、交付验收与专注工作台",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "ai-todos",
+        "shortDescription": "本地任务、AI 交付与专注管理",
+        "longDescription": "任务看板、甘特图、OKR、计划、可信 AI 会话关联、交付证据和人工验收。自带独立本地服务与 SQLite。",
+        "developerName": "denvey",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "brandColor": "#2f6249",
+        "defaultPrompt": ["打开 ai-todos 工作台", "使用 ai-todos 管理当前任务，交付后提交证据，等待人工验收。"]
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+import { readFileSync } from 'node:fs';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
+import { z } from 'zod';
+import { commandSchema } from './domain.js';
+import { codexActionSchema } from './codex.js';
+import { ensureService, service } from './service-client.js';
+import { origin } from './paths.js';
+await ensureService();
+const server = new McpServer({ name: 'ai-todos', version: '0.1.0' });
+const uri = 'ui://ai-todos/app.html';
+const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
+const guarded = fn => async args => { try { return result(await fn(args)); } catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; } };
+registerAppTool(server, 'ai_todos_open', {
+  title: 'ai-todos', description: 'Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.',
+  inputSchema: z.object({}), annotations: { readOnlyHint: true, openWorldHint: false },
+  _meta: { ui: { resourceUri: uri }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } },
+}, guarded(async () => ({ ...await service('state'), browserUrl: origin })));
+server.registerTool('ai_todos_snapshot', { description: 'Read persistent tasks, inbox captures, projects, OKRs, plans, trusted hook sessions, focus and reminders. Observed AI state is independent of task business state.', inputSchema: z.object({}), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model', 'app'] } } }, guarded(() => service('state')));
+server.registerTool('ai_todos_task', { description: 'Read one task and its delivery/acceptance history. Use the returned revision for a subsequent mutation. Never replace a human-reviewed revision with a newer one.', inputSchema: z.object({ id: z.string().uuid() }), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model', 'app'] } } }, guarded(args => service('task', args)));
+server.registerTool('ai_todos_manage', {
+  description: 'Create/update/delete task, inbox capture, project, objective, keyResult or plan. create_tasks atomically creates tasks and adds them to planDate. promote converts an inbox capture to a task, optionally adding it to planDate. daily_plan selects the union of tasks for one date; plans must contain every plan ID and revision actually read for that date. Creation/promotion requestId is a UUID generated once and reused on retries. Bind only a hook-observed session ID; transition defining → ready → executing; submit real delivery summary and absolute-path/HTTP(S) evidence; manage persisted focus/settings/reminders. All updates require the revision actually read. Ready requires acceptance criteria. Stop is never delivery or acceptance. No accept/reject operation is available to AI: people must review evidence in the local UI. Do not infer acceptance, forge evidence or session IDs. Starting execution records intent and does not start Codex by itself.',
+  inputSchema: z.object({ command: commandSchema }), annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model', 'app'] } },
+}, guarded(args => service('command', args.command)));
+server.registerTool('ai_todos_codex', { description: 'Sync Codex projects or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.', inputSchema: z.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ['app'] } } }, guarded(args => service('codex', args.action)));
+registerAppResource(server, 'ai-todos workspace', uri, { description: 'Persistent local productivity workspace' }, async () => ({ contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: readFileSync(new URL('../dist/app.html', import.meta.url), 'utf8').replaceAll('__AI_TODOS_ORIGIN__', origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
+await server.connect(new StdioServerTransport());

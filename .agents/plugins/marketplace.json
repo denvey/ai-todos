@@ -1,0 +1,12 @@
+{
+  "name": "ai-todos-local",
+  "interface": { "displayName": "ai-todos Local" },
+  "plugins": [
+    {
+      "name": "ai-todos",
+      "source": { "source": "local", "path": "./plugins/ai-todos" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
