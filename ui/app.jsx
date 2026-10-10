@@ -27,7 +27,7 @@ const singular = { task: '任务', project: '项目', objective: '目标', keyRe
 let csrf;
 async function api(path, data) {
   if (embedded) {
-    const names = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex' };
+    const names = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex', 'session-confirm': 'ai_todos_confirm_session' };
     if (!names[path]) throw new Error('人工审阅请打开本地应用。');
     const result = await bridge.callServerTool({ name: names[path], arguments: path === 'command' ? { command: data } : path === 'codex' ? { action: data } : (data ?? {}) });
     if (result.isError) throw new Error(result.content?.find(item => item.type === 'text')?.text || '工具调用失败');
@@ -188,6 +188,10 @@ function Workspace() {
     if (embedded) { const result = await bridge.openLink({ url }); if (result.isError) throw new Error('宿主未允许打开原会话。'); }
     else window.location.href = url;
   });
+  const confirmSession = session => run(async () => {
+    await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
+    await refresh(true);
+  }, '会话已确认完成');
   const createToday = (draft, onCreated) => open({ type: 'task', draft, onCreated, planDate: localDay(new Date()), requestId: crypto.randomUUID() });
   const addToday = (data, requestId) => run(() => mutate({ action: 'create_tasks', data, requestId, planDate: localDay(new Date()) }), data.length > 1 ? `已拆成 ${data.length} 项今日任务` : '任务已加入今天');
   const captureInbox = (title, requestId) => run(() => mutate({ action: 'create', kind: 'inbox', data: { title }, requestId }), '已记入收件箱，不计入待办和逾期');
@@ -299,7 +303,7 @@ function Workspace() {
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? '已归档，可在收件箱底部恢复' : '已恢复到收件箱')} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><span className="muted">{filtered.length} 项任务 · {filteredSessions.length} 个 Codex 会话</span><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div></div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
       {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">实时状态尚未接通，当前只同步了历史会话。请在终端运行 <code>codex</code>，输入 <code>/hooks</code>，审阅并信任 ai-todos 插件的 hooks。然后重新打开需要跟踪的会话；收到运行事件后会自动显示在“进行中”。</p>}
-      {view.mode === 'board' ? <BoardView tasks={filtered} sessions={filteredSessions} onOpenSession={openSession} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onReschedule={reschedule} />}
+      {view.mode === 'board' ? <BoardView tasks={filtered} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">已取消（{filtered.filter(task => task.state === 'cancelled').length}）</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

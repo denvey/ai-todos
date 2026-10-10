@@ -17,4 +17,6 @@ Define the requirement and acceptance criteria, set the task ready, start execut
 
 There is no AI acceptance tool. After submission, point the user to the task's review page in the local application. Only the human's explicit decision on the displayed revision can accept or reject. Do not click acceptance checkboxes or submit review forms on the user's behalf without an explicit instruction to record the exact reviewed decision. Do not fabricate completion by dragging cards.
 
+Unbound idle/ended conversations have a human-only “确认完成” button in the board. It records completion of the displayed conversation observation, independently of business task acceptance. New activity clears that confirmation. Never infer or record this decision from Stop or successful checks; linked tasks must use their existing delivery/review workflow.
+
 The server and SQLite run locally without Xinmo, Gateway, OpenClaw or NAS. Browser notifications require an open panel and permission; reminders are persisted while the service runs. Focus uses wall-clock timestamps and continues over panel closure and service downtime until explicitly paused or finished.

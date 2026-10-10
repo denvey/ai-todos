@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import { commandSchema } from './domain.js';
+import { commandSchema, sessionConfirmSchema } from './domain.js';
 import { codexActionSchema } from './codex.js';
 import { ensureService, service } from './service-client.js';
 import { origin } from './paths.js';
@@ -26,6 +26,7 @@ server.registerTool('ai_todos_manage', {
   inputSchema: z.object({ command: commandSchema }), annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }, _meta: { ui: { visibility: ['model', 'app'] } },
 }, guarded(args => service('command', args.command)));
 server.registerTool('ai_todos_codex', { description: 'Sync Codex projects and existing conversations, or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.', inputSchema: z.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ['app'] } } }, guarded(args => service('codex', args.action)));
+server.registerTool('ai_todos_confirm_session', { description: 'Record the human UI action confirming an unbound, stopped conversation complete at its displayed observation. This is not business task acceptance.', inputSchema: sessionConfirmSchema, annotations: { readOnlyHint: false, openWorldHint: false }, _meta: { ui: { visibility: ['app'] } } }, guarded(args => service('session-confirm', args)));
 registerAppResource(server, 'ai-todos workspace', uri, { description: 'Persistent local productivity workspace' }, async () => ({ contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: readFileSync(new URL('../dist/app.html', import.meta.url), 'utf8').replaceAll('__AI_TODOS_ORIGIN__', origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
 const transport = new StdioServerTransport();
 const send = transport.send.bind(transport);

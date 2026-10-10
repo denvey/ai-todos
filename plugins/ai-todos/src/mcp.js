@@ -36597,6 +36597,7 @@ var commandSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ action: external_exports.literal("ack"), id }).strict()
 ]);
 var reviewSchema = external_exports.object({ id, revision, decision: external_exports.enum(["accept", "reject"]), confirmed: external_exports.literal(true), reviewer: text, note: note.default("") }).strict();
+var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 
 // src/codex.js
 import { basename, isAbsolute, join, normalize } from "node:path";
@@ -36708,6 +36709,7 @@ server.registerTool("ai_todos_manage", {
   _meta: { ui: { visibility: ["model", "app"] } }
 }, guarded((args) => service("command", args.command)));
 server.registerTool("ai_todos_codex", { description: "Sync Codex projects and existing conversations, or generate a task definition suggestion for human preview. Suggestions do not save or execute tasks.", inputSchema: external_exports.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("codex", args.action)));
+server.registerTool("ai_todos_confirm_session", { description: "Record the human UI action confirming an unbound, stopped conversation complete at its displayed observation. This is not business task acceptance.", inputSchema: sessionConfirmSchema, annotations: { readOnlyHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("session-confirm", args)));
 G(server, "ai-todos workspace", uri, { description: "Persistent local productivity workspace" }, async () => ({ contents: [{ uri, mimeType: L, text: readFileSync2(new URL("../dist/app.html", import.meta.url), "utf8").replaceAll("__AI_TODOS_ORIGIN__", origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
 var transport = new StdioServerTransport();
 var send = transport.send.bind(transport);

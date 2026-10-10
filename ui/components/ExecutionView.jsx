@@ -1,6 +1,6 @@
 // Adapted from Xinmo Desktop ExecutionView.tsx: callbacks replace desktop backend calls.
 import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo, ExternalLink, MessageSquarePlus } from 'lucide-react';
+import { CalendarRange, ChevronDown, ListTodo, ExternalLink, MessageSquarePlus, Check, Code2 } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabels } from '../format.js';
 
 export const boardColumns = [
@@ -42,22 +42,27 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onNewSession, 
 
 export function sessionColumn(session) {
   if (session.state === 'running') return 'executing';
+  if (session.confirmedAt && ['idle', 'ended'].includes(session.state)) return 'completed';
   if (['waiting', 'idle', 'interrupted', 'ended'].includes(session.state)) return 'waiting_user';
   return null;
 }
 
-function SessionCard({ session, projects, busy, onOpenSession }) {
+function SessionCard({ session, projects, busy, onOpenSession, onConfirmSession }) {
   const [expanded, setExpanded] = useState(false);
-  const title = session.title || `Codex · ${session.cwd?.split(/[\\/]/).pop() || session.id.slice(-8)}`;
+  const workspace = projects.find(project => project.codex?.workspacePath === session.cwd)?.title || session.cwd?.split(/[\\/]/).pop();
+  const title = session.title || `Codex · ${workspace || session.id.slice(-8)}`;
+  const canConfirm = !session.confirmedAt && ['idle', 'ended'].includes(session.state);
   return <article className="execution-card execution-session-card">
     <button type="button" className="execution-card__summary" aria-expanded={expanded} aria-controls={`execution-session-${session.id}`} onClick={() => setExpanded(value => !value)}><strong title={title}>{title}</strong><ChevronDown size={14} /></button>
-    <div className="execution-card__primary execution-card__actions"><span className={`execution-status status-${session.state}`}>{runtimeLabels[session.state]}</span><button type="button" disabled={busy} onClick={() => onOpenSession(session.id)}><ExternalLink size={12} />打开原会话</button></div>
-    <div className="execution-card__badges"><span className="muted">Codex 会话{session.state === 'unknown' ? ' · 运行状态未获取' : ''}</span></div>
-    <div id={`execution-session-${session.id}`} className="execution-card__content" hidden={!expanded}><div className="execution-card__body"><small>{projects.find(project => project.codex?.workspacePath === session.cwd)?.title || session.cwd}</small><small>{session.preview}</small><small>{fmt(session.catalogUpdatedAt || session.observedAt)} · {session.id}</small></div></div>
+    <div className="execution-card__primary execution-card__actions"><span className={`execution-status status-${sessionColumn(session) === 'completed' ? 'accepted' : session.state}`}>{sessionColumn(session) === 'completed' ? '已确认完成' : runtimeLabels[session.state]}</span><div className="execution-session-card__actions"><button type="button" disabled={busy} onClick={() => onOpenSession(session.id)}><ExternalLink size={12} />打开原会话</button>{canConfirm && onConfirmSession && <button type="button" disabled={busy} onClick={() => onConfirmSession(session)}><Check size={12} />确认完成</button>}</div></div>
+    <div id={`execution-session-${session.id}`} className="execution-card__content" hidden={!expanded}><div className="execution-card__body">
+      <div className="execution-card__topline"><span className="execution-session-card__source" title={session.cwd}><Code2 size={11} aria-hidden="true" /><span>Codex{workspace ? ` · ${workspace}` : ''}</span></span><span>{fmt(session.catalogUpdatedAt || session.observedAt)}</span></div>
+      {session.confirmedAt && <small>已确认完成 · {fmt(session.confirmedAt)}</small>}
+    </div></div>
   </article>;
 }
 
-export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onNewSession, onTransition, onError }) {
+export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onNewSession, onTransition, onError }) {
   const [dropTarget, setDropTarget] = useState(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState({});
@@ -89,7 +94,7 @@ export function BoardView({ tasks, sessions = [], projects, busy, onOpenTask, on
         <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{column.label}</strong></span><em>{items.length} 任务{sessionItems.length > 0 && ` · ${sessionItems.length} 会话`}</em></header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={`${column.label}卡片`}>
           {items.slice(0, completed && !showCompletedHistory ? 5 : undefined).map(renderTask)}
-          {sessionItems.slice(0, sessionLimits[column.id] || 50).map(session => <SessionCard key={session.id} session={session} projects={projects} busy={busy} onOpenSession={onOpenSession} />)}
+          {sessionItems.slice(0, sessionLimits[column.id] || 50).map(session => <SessionCard key={session.id} session={session} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession} />)}
           {sessionItems.length > (sessionLimits[column.id] || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, [column.id]: (current[column.id] || 50) + 50 }))}>更多会话（还剩 {sessionItems.length - (sessionLimits[column.id] || 50)} 个）</button>}
           {!items.length && !sessionItems.length && <div className="execution-column__empty">暂无任务</div>}
         </div>

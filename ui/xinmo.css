@@ -417,6 +417,13 @@
 .execution-card .execution-card__primary button { flex: none; border-color: transparent; background: transparent; }
 .execution-card .execution-card__primary button:hover { background: var(--fill); }
 .execution-card__badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.execution-session-card { cursor: default; }
+.execution-session-card .execution-card__primary { flex-wrap: wrap; }
+.execution-session-card__actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
+.execution-session-card__source { min-width: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; }
+.execution-session-card__source svg { flex: none; }
+.execution-session-card__source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.execution-session-card .execution-card__topline { flex-wrap: wrap; font-size: 10px; }
 .execution-card__actions { display: flex; flex-wrap: wrap; gap: 4px; padding-top: 2px; }
 .execution-card__actions button, .codex-request button, .execution-inline-action button { display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-height: 25px; padding: 0 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); color: var(--muted); font-size: 9.5px; font-weight: 650; cursor: pointer; }
 .execution-card__actions button:hover, .codex-request button:hover, .execution-inline-action button:hover { border-color: color-mix(in oklch, var(--accent) 36%, var(--line)); color: var(--accent-strong); }

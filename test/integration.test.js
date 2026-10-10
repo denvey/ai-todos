@@ -23,7 +23,8 @@ test('real STDIO tools/resource, local daemon, browser security, reviewed revisi
     await new Promise(r => setTimeout(r, 100)); rmSync(dir, { recursive: true, force: true });
   });
   await client.connect(transport);
-  const tools = await client.listTools(); assert.equal(tools.tools.length, 4);
+  const tools = await client.listTools(); assert.equal(tools.tools.length, 6);
+  assert.deepEqual(tools.tools.find(tool => tool.name === 'ai_todos_confirm_session')._meta.ui.visibility, ['app']);
   assert.ok(!tools.tools.some(t => /accept|review/.test(t.name)));
   const open = tools.tools.find(t => t.name === 'ai_todos_open'); assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
   const resources = await client.listResources(); assert.equal(resources.resources[0].uri, 'ui://ai-todos/app.html');

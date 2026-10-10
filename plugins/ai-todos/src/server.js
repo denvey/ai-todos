@@ -19724,6 +19724,7 @@ var commandSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ action: external_exports.literal("ack"), id }).strict()
 ]);
 var reviewSchema = external_exports.object({ id, revision, decision: external_exports.enum(["accept", "reject"]), confirmed: external_exports.literal(true), reviewer: text, note: note.default("") }).strict();
+var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 var DomainError = class extends Error {
   constructor(message, status = 400) {
     super(message);
@@ -19891,7 +19892,11 @@ var Store = class {
         seen.add(thread.id);
         const previous = existing.get(thread.id);
         const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
-        if (thread.state !== "unknown" || !previous) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
+        if (previous?.catalogUpdatedAt && Date.parse(thread.updatedAt) > Date.parse(previous.catalogUpdatedAt)) delete session.confirmedAt;
+        if (thread.state !== "unknown" || !previous) {
+          if (thread.state !== previous?.observedState || thread.updatedAt !== previous?.catalogUpdatedAt) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
+          if (!["idle", "ended"].includes(thread.state)) delete session.confirmedAt;
+        }
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
@@ -20038,6 +20043,22 @@ var Store = class {
       return task;
     });
   }
+  confirmSession(raw) {
+    const c = sessionConfirmSchema.parse(raw);
+    return this.transaction(() => {
+      const row = this.db.prepare("SELECT body FROM sessions WHERE id=?").get(c.id);
+      requireThat(row, "\u4F1A\u8BDD\u4E0D\u5B58\u5728", 404);
+      const session = JSON.parse(row.body);
+      requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, "\u4F1A\u8BDD\u5DF2\u53D8\u5316\uFF0C\u8BF7\u5237\u65B0\u5E76\u91CD\u65B0\u786E\u8BA4\u3002", 409);
+      requireThat(["idle", "ended"].includes(session.observedState), "\u53EA\u6709\u672C\u8F6E\u7ED3\u675F\u6216\u5DF2\u7ED3\u675F\u7684\u4F1A\u8BDD\u53EF\u4EE5\u786E\u8BA4\u5B8C\u6210");
+      requireThat(!this.all("task").some((task) => task.sessionId === c.id && task.state !== "cancelled"), "\u5DF2\u5173\u8054\u4EFB\u52A1\u7684\u4F1A\u8BDD\u8BF7\u901A\u8FC7\u4EFB\u52A1\u9A8C\u6536\u786E\u8BA4\u5B8C\u6210");
+      if (!session.confirmedAt) {
+        session.confirmedAt = this.at();
+        this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify(session), session.id);
+      }
+      return session;
+    });
+  }
   changeFocus(c) {
     const f = this.focus();
     this.check(f, c.revision);
@@ -20080,6 +20101,7 @@ var Store = class {
       if (["Stop", "Interrupt"].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
       const states = { SessionStart: "idle", UserPromptSubmit: "running", PreToolUse: "running", PostToolUse: "running", PermissionRequest: "waiting", Stop: "idle", Interrupt: "interrupted", SessionEnd: "ended" };
       const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
+      if (!["Stop", "SessionEnd"].includes(event.hook_event_name) || session.turnId !== previous?.turnId) delete session.confirmedAt;
       this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
       return session;
     });
@@ -20357,6 +20379,7 @@ var server = createServer(async (req, res) => {
       }
       if (path === "/internal/command" && req.method === "POST") return send(res, 200, store.command(await body(req), "model"));
       if (path === "/internal/codex" && req.method === "POST") return send(res, 200, await codexAction(store, await body(req)));
+      if (path === "/internal/session-confirm" && req.method === "POST") return send(res, 200, store.confirmSession(await body(req)));
       if (path === "/internal/stop" && req.method === "POST") {
         send(res, 200, { stopped: true });
         setImmediate(shutdown);
@@ -20382,6 +20405,7 @@ var server = createServer(async (req, res) => {
     }
     if (path === "/api/command" && req.method === "POST") return send(res, 200, store.command(await body(req), "human"));
     if (path === "/api/codex" && req.method === "POST") return send(res, 200, await codexAction(store, await body(req)));
+    if (path === "/api/session-confirm" && req.method === "POST") return send(res, 200, store.confirmSession(await body(req)));
     if (path === "/api/review-ticket" && req.method === "POST") {
       const { id: id2, revision: revision2 } = await body(req);
       const task = store.get("task", id2);
