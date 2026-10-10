@@ -9,7 +9,7 @@ await build({ entryPoints: ['src/mcp.js', 'src/server.js', 'hooks/observe.js', '
 for (const path of ['dist', 'skills', 'docs', 'assets', 'README.md']) cpSync(path, `${target}/${path}`, { recursive: true });
 // Codex skips hooks for the root Agent Plugins manifest; use its native manifest.
 rmSync(`${target}/plugin.json`, { force: true });
-writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', version: '0.1.0', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
+writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', version: '0.1.1', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
 const mcp = JSON.parse(readFileSync('mcp.json', 'utf8'));
 mcp.mcpServers['ai-todos'].command = nodeCommand;
 writeFileSync(`${target}/mcp.json`, JSON.stringify(mcp, null, 2));

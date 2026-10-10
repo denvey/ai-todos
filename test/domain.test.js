@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Store } from '../src/domain.js';
+import { executionColumnForTask, taskStatus, visibleExecutionSessions } from '../ui/execution-board.js';
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-todos-domain-')); let now = Date.parse('2026-10-10T00:00:00Z');
   const store = new Store(join(dir, 'data.sqlite'), () => now);
@@ -54,7 +55,7 @@ test('workflow requires criteria, evidence and explicit human review on the revi
   assert.throws(() => transition(s, task, 'defining', 'model'), /由人/);
 });
 
-test('hook-observed IDs, unique binding, stale observation and Stop never submit or accept', t => {
+test('hook-observed IDs, unique binding, Xinmo planning projection and Stop never submit or accept', t => {
   const { store: s, advance } = fixture(t); const sessionId = randomUUID();
   let task = create(s, 'task', { title: 'AI 任务', criteria: '完整交付' });
   assert.throws(() => s.command({ action: 'bind', id: task.id, revision: task.revision, sessionId }), /可信/);
@@ -62,12 +63,29 @@ test('hook-observed IDs, unique binding, stale observation and Stop never submit
   task = s.command({ action: 'bind', id: task.id, revision: task.revision, sessionId });
   const other = create(s, 'task', { title: '另一个' });
   assert.throws(() => s.command({ action: 'bind', id: other.id, revision: other.revision, sessionId }), /已绑定/);
-  task = transition(s, task, 'ready'); task = transition(s, task, 'executing', 'model');
+  let snapshot = s.snapshot(), projected = snapshot.tasks.find(t => t.id === task.id);
+  assert.equal(projected.ai.mode, 'planning');
+  assert.equal(executionColumnForTask(projected), 'executing');
+  assert.equal(taskStatus(projected), '正在规划');
+  s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'Stop', turn_id: 'turn-1' });
+  snapshot = s.snapshot(); projected = snapshot.tasks.find(t => t.id === task.id);
+  assert.equal(projected.state, 'defining');
+  assert.equal(executionColumnForTask(projected), 'waiting_user');
+  assert.equal(taskStatus(projected), '待确定');
+  assert.deepEqual(visibleExecutionSessions(snapshot.sessions, snapshot.tasks), []);
+  assert.equal(snapshot.sessions[0].mode, undefined);
+  task = transition(s, task, 'ready');
+  projected = s.snapshot().tasks.find(t => t.id === task.id);
+  assert.equal(projected.ai.mode, 'execution');
+  assert.equal(executionColumnForTask(projected), 'ready');
+  s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'UserPromptSubmit', turn_id: 'turn-2' });
+  task = transition(s, task, 'executing', 'model');
+  assert.equal(s.snapshot().tasks.find(t => t.id === task.id).ai.mode, 'execution');
   assert.equal(s.snapshot().tasks.find(t => t.id === task.id).ai.state, 'running');
   advance(300001); assert.equal(s.snapshot().tasks.find(t => t.id === task.id).ai.state, 'unknown');
   s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'Stop', turn_id: 'older-turn' });
   assert.equal(s.sessions()[0].observedState, 'running');
-  s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'Stop', turn_id: 'turn-1' });
+  s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'Stop', turn_id: 'turn-2' });
   assert.equal(s.get('task', task.id).state, 'executing'); assert.equal(s.sessions()[0].state, 'idle');
   assert.equal(s.get('task', task.id).delivery, undefined);
 });

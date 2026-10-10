@@ -19814,7 +19814,10 @@ var Store = class {
   snapshot() {
     const sessions = this.sessions();
     return {
-      tasks: this.all("task").map((t) => ({ ...t, ai: sessions.find((s) => s.id === t.sessionId) ?? null })),
+      tasks: this.all("task").map((t) => {
+        const session = sessions.find((s) => s.id === t.sessionId);
+        return { ...t, ai: session ? { ...session, mode: t.state === "defining" ? "planning" : "execution" } : null };
+      }),
       projects: this.all("project"),
       objectives: this.all("objective"),
       keyResults: this.all("keyResult"),

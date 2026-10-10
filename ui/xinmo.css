@@ -522,9 +522,10 @@
 .goal-create { align-self: end; }
 .objective-list { display: grid; gap: var(--sp-3); }
 .objective-block { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
-.objective-row-shell { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); }
-.objective-row { min-width: 0; width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: var(--sp-2); padding: var(--sp-3); text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; transition: background-color 140ms ease-out; }
-.objective-row:hover { background: var(--fill); }
+.objective-row-shell { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); transition: background-color 140ms ease-out; }
+.objective-row-shell:hover { background: var(--fill); }
+.objective-row { min-width: 0; width: 100%; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: var(--sp-2); padding: var(--sp-3); text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.objective-row:hover { background: transparent; }
 .objective-progress { --progress: 0%; display: grid; place-items: center; width: 54px; height: 54px; flex: none; border-radius: 50%; background: conic-gradient(var(--accent) var(--progress), var(--fill-2) 0); position: relative; }
 .objective-progress::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--surface); }
 .objective-progress strong { z-index: 1; font-size: 12px; font-variant-numeric: tabular-nums; }

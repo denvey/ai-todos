@@ -91,7 +91,10 @@ export class Store {
   snapshot() {
     const sessions = this.sessions();
     return {
-      tasks: this.all('task').map(t => ({ ...t, ai: sessions.find(s => s.id === t.sessionId) ?? null })),
+      tasks: this.all('task').map(t => {
+        const session = sessions.find(s => s.id === t.sessionId);
+        return { ...t, ai: session ? { ...session, mode: t.state === 'defining' ? 'planning' : 'execution' } : null };
+      }),
       projects: this.all('project'), objectives: this.all('objective'), keyResults: this.all('keyResult'), plans: this.all('plan'), inbox: this.all('inbox'), sessions,
       focus: { ...this.focus(), totalMs: elapsed(this.focus(), this.now()) }, settings: this.settings(),
       notices: this.db.prepare('SELECT body FROM notices ORDER BY rowid DESC LIMIT 200').all().map(r => JSON.parse(r.body)),
