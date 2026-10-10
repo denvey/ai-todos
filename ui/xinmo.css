@@ -303,8 +303,8 @@
 .task-definition__header > span, .acceptance-definition__heading > span { min-width: 0; display: grid; gap: 2px; }
 .task-definition__header strong, .acceptance-definition__heading strong { color: var(--ink); font-size: 12px; font-weight: 680; }
 .task-definition__header small, .acceptance-definition__heading small { color: var(--faint); font-size: var(--fs-caption); line-height: 1.4; }
-.task-definition__ai-note { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 8px 9px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent-strong); font-size: var(--fs-caption); line-height: 1.45; }
-.task-definition__ai-note svg { flex: none; margin-top: 1px; }
+.editor-field__ai[aria-busy="true"] { background: var(--accent-soft); }
+.editor-field__ai[aria-busy="true"] svg { animation: ai-draft-pulse 900ms ease-in-out infinite alternate; }
 .task-definition__ai-preview { display: grid; gap: 10px; padding: 11px; border: 1px solid color-mix(in oklch, var(--accent) 30%, var(--line)); border-radius: var(--r-sm); background: var(--surface); }
 .task-definition__ai-preview > header span { display: grid; gap: 2px; }
 .task-definition__ai-preview > header strong { color: var(--ink); font-size: 12px; }

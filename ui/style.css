@@ -84,8 +84,8 @@ textarea{min-height:74px;resize:vertical;line-height:1.45}
 label,.editor-field{display:grid;gap:6px;min-width:0;font-size:12px;color:var(--muted)}
 .editor-field__control{position:relative;min-width:0}
 .editor-field__control>input,.editor-field__control>textarea{display:block}
-.editor-field__control.has-action>input,.editor-field__control.has-action>textarea{padding-right:104px}
-.editor-field__ai{position:absolute;top:5px;right:5px;min-height:28px;padding:3px 7px;border:0;background:var(--fill);color:var(--accent-strong);font-size:var(--fs-caption);white-space:nowrap}
+.editor-field__control.has-action>input,.editor-field__control.has-action>textarea{padding-right:40px}
+.editor-field__ai{position:absolute;top:5px;right:5px;width:28px;min-height:28px;padding:0;border:0;background:var(--fill);color:var(--accent-strong)}
 .editor-field__ai:hover:not(:disabled){background:var(--accent-soft)}
 .editor-field>small{font-size:var(--fs-caption);color:var(--faint);line-height:1.5}
 input[type=checkbox]{width:16px;height:16px;accent-color:var(--ink)}
