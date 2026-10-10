@@ -13,7 +13,7 @@ writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', versi
 const mcp = JSON.parse(readFileSync('mcp.json', 'utf8'));
 mcp.mcpServers['ai-todos'].command = nodeCommand;
 writeFileSync(`${target}/mcp.json`, JSON.stringify(mcp, null, 2));
-writeFileSync(`${target}/.mcp.json`, JSON.stringify({ mcpServers: { 'ai-todos': { command: nodeCommand, args: ['${PLUGIN_ROOT}/src/mcp.js'] } } }, null, 2));
+writeFileSync(`${target}/.mcp.json`, JSON.stringify({ mcpServers: { 'ai-todos': { command: nodeCommand, args: ['src/mcp.js'], cwd: '.' } } }, null, 2));
 mkdirSync(`${target}/.codex-plugin`, { recursive: true });
 const manifest = JSON.parse(readFileSync('plugin.json', 'utf8'));
 writeFileSync(`${target}/.codex-plugin/plugin.json`, JSON.stringify({ name: manifest.name, version: manifest.version, description: manifest.description, skills: './skills/', mcpServers: './.mcp.json', hooks: './hooks/hooks.json', interface: manifest.extensions['com.openai'].interface }, null, 2));

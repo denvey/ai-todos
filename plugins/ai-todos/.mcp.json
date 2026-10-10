@@ -3,8 +3,9 @@
     "ai-todos": {
       "command": "node",
       "args": [
-        "${PLUGIN_ROOT}/src/mcp.js"
-      ]
+        "src/mcp.js"
+      ],
+      "cwd": "."
     }
   }
 }
