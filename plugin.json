@@ -7,7 +7,7 @@
     "com.openai": {
       "hooks": "./hooks/hooks.json",
       "interface": {
-        "displayName": "ai-todos",
+        "displayName": "任务",
         "shortDescription": "本地任务、AI 交付与专注管理",
         "longDescription": "任务看板、甘特图、OKR、计划、可信 AI 会话关联、交付证据和人工验收。自带独立本地服务与 SQLite。",
         "developerName": "denvey",

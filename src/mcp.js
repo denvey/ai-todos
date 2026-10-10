@@ -8,12 +8,12 @@ import { codexActionSchema } from './codex.js';
 import { ensureService, service } from './service-client.js';
 import { origin } from './paths.js';
 await ensureService();
-const server = new McpServer({ name: 'ai-todos', version: '0.1.0' });
+const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.0' });
 const uri = 'ui://ai-todos/app.html';
 const result = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 const guarded = fn => async args => { try { return result(await fn(args)); } catch (error) { return { isError: true, content: [{ type: 'text', text: error.message }] }; } };
 registerAppTool(server, 'ai_todos_open', {
-  title: 'ai-todos', description: 'Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.',
+  title: '任务', description: 'Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.',
   inputSchema: z.object({}), annotations: { readOnlyHint: true, openWorldHint: false },
   _meta: { ui: { resourceUri: uri }, 'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] } },
 }, guarded(async () => ({ ...await service('state'), browserUrl: origin })));

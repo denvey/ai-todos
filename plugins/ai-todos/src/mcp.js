@@ -36675,7 +36675,7 @@ async function service(path, value) {
 
 // src/mcp.js
 await ensureService();
-var server = new McpServer({ name: "ai-todos", version: "0.1.0" });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.0" });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
@@ -36686,7 +36686,7 @@ var guarded = (fn) => async (args) => {
   }
 };
 j(server, "ai_todos_open", {
-  title: "ai-todos",
+  title: "\u4EFB\u52A1",
   description: "Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.",
   inputSchema: external_exports.object({}),
   annotations: { readOnlyHint: true, openWorldHint: false },

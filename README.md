@@ -1,4 +1,6 @@
-# ai-todos
+# Todos · 任务
+
+英文产品名 **Todos**，中文显示名 **任务**。插件安装标识仍为 `ai-todos@ai-todos-local`。当前侧边栏配置使用中文名，工作台页面标题按宿主或浏览器语言显示；官方本地插件显示名配置未确认支持自动语言切换。
 
 可独立运行的 Codex 桌面端任务与专注管理插件。自带本地 MCP 服务、完整 Web 应用和 SQLite 持久化存储，**不需要 Xinmo Desktop、心魔 Gateway、OpenClaw 或 NAS**。
 

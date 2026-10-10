@@ -15,6 +15,11 @@ import './style.css';
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
 const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.0' }, {}, { autoResize: true }) : null;
+function applyDisplayName(locale) {
+  const chinese = /^zh(?:-|$)/i.test(locale || navigator.language);
+  document.title = chinese ? '任务 · 工作台' : 'Todos · Workspace';
+}
+applyDisplayName();
 const mainPages = { today: '首页', work: '任务', projects: '项目', okr: 'OKR' };
 const pages = { ...mainPages, inbox: '收件箱', plans: '每日计划', settings: '设置' };
 const singular = { task: '任务', project: '项目', objective: '目标', keyResult: '关键结果', plan: '计划' };
@@ -198,7 +203,7 @@ function Workspace() {
     const boot = async () => {
       try {
         if (embedded) {
-          const applyHostContext = context => { if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts); };
+          const applyHostContext = context => { if (context?.locale) applyDisplayName(context.locale); if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts); };
           bridge.onhostcontextchanged = applyHostContext;
           bridge.ontoolresult = result => { if (result.structuredContent?.tasks) refresh(true).catch(reason => toast(reason.message)); };
           await bridge.connect(); applyHostContext(bridge.getHostContext());
