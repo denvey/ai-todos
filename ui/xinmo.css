@@ -418,6 +418,7 @@
 .execution-card .execution-card__primary button:hover { background: var(--fill); }
 .execution-card__badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .execution-session-card { cursor: default; }
+.execution-session-card[draggable="true"] { cursor: grab; }
 .execution-session-card .execution-card__primary { flex-wrap: wrap; }
 .execution-session-card__actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
 .execution-session-card__source { min-width: 0; display: inline-flex; align-items: center; gap: 4px; font-size: 10px; }

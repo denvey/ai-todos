@@ -10,6 +10,7 @@ import { TodayView, DailyPlanEditor, dayPlans } from './components/TodayView.jsx
 import { InboxView } from './components/InboxView.jsx';
 import { clock, dateInput, fmt, hours, labels, localDay, parseSchedule } from './format.js';
 import { executionPrompt, newSessionPrompt } from './codex-prompts.js';
+import { visibleExecutionSessions } from './execution-board.js';
 import './xinmo.css';
 import './style.css';
 
@@ -81,8 +82,8 @@ function DeliveryForm({ busy, onSave }) {
   </form>;
 }
 
-function ReviewForm({ task, busy, onSave }) {
-  const [values, setValues] = useState({ reviewer: '', decision: 'accept', note: '', confirmed: false });
+function ReviewForm({ task, decision = 'accept', busy, onSave }) {
+  const [values, setValues] = useState({ reviewer: '', decision, note: '', confirmed: false });
   return <form onSubmit={event => { event.preventDefault(); onSave(values); }}><div className="task-editor__body"><p className="note">正在审阅「{task.title}」的 r{task.revision}。请先检查验收标准与证据，再确认决定。</p><section className="dialog-section"><h3>验收标准</h3><p>{task.criteria}</p></section><Delivery task={task} />
     <Field label="审阅人" value={values.reviewer} onChange={value => setValues(current => ({ ...current, reviewer: value }))} required disabled={busy} />
     <SelectField label="审阅决定" value={values.decision} disabled={busy} onValueChange={value => setValues(current => ({ ...current, decision: value }))} groups={[{ options: [{ value: 'accept', label: '验收通过' }, { value: 'reject', label: '退回修改' }] }]} />
@@ -155,10 +156,10 @@ function Workspace() {
     const start = Date.parse(task.plannedStart) + (edge === 'end' ? 0 : days * 86400000), end = Date.parse(task.plannedEnd) + (edge === 'start' ? 0 : days * 86400000);
     await mutate({ action: 'update', kind: 'task', id: task.id, revision: task.revision, data: { plannedStart: new Date(start).toISOString(), plannedEnd: new Date(end).toISOString() } });
   }, '排期已保存');
-  const review = task => run(async () => {
+  const review = (task, decision = 'accept') => run(async () => {
     if (embedded) { await openLocal(task.id); toast('请在本地应用中打开交付证据并明确确认。'); return; }
     const detail = await api('review-ticket', { id: task.id, revision: task.revision });
-    open({ type: 'review', ...detail, returnTo: modalRef.current?.returnTo });
+    open({ type: 'review', ...detail, decision, returnTo: modalRef.current?.returnTo });
   });
   const prompt = id => run(async () => { const { task } = await api('task', { id }); open({ type: 'prompt', text: executionPrompt(task), returnTo: modalRef.current?.returnTo }); });
   const newSession = task => run(async () => {
@@ -246,7 +247,7 @@ function Workspace() {
   const findTask = id => snapshot.tasks.find(task => task.id === id);
   const projectName = id => snapshot.projects.find(project => project.id === id)?.title || '无项目';
   const filtered = snapshot.tasks.filter(task => (!view.project || task.projectId === view.project) && (!view.search || `${task.title} ${task.description}`.toLowerCase().includes(view.search.toLowerCase())));
-  const filteredSessions = snapshot.sessions.filter(session => session.catalogVisible !== false && !snapshot.tasks.some(task => task.sessionId === session.id && task.state !== 'cancelled') && (!view.project || snapshot.projects.find(project => project.id === view.project)?.codex?.workspacePath === session.cwd) && (!view.search || `${session.title || ''} ${session.preview || ''}`.toLowerCase().includes(view.search.toLowerCase()))).sort((a, b) => (b.catalogUpdatedAt || b.observedAt).localeCompare(a.catalogUpdatedAt || a.observedAt));
+  const filteredSessions = visibleExecutionSessions(snapshot.sessions, snapshot.tasks).filter(session => session.catalogVisible !== false && (!view.project || snapshot.projects.find(project => project.id === view.project)?.codex?.workspacePath === session.cwd) && (!view.search || `${session.title || ''} ${session.preview || ''}`.toLowerCase().includes(view.search.toLowerCase()))).sort((a, b) => (b.catalogUpdatedAt || b.observedAt).localeCompare(a.catalogUpdatedAt || a.observedAt));
   const elapsedMs = snapshot.focus.totalMs + (snapshot.focus.status === 'running' ? Math.max(0, Date.now() - receivedAt.current) : 0);
   const focusCandidates = snapshot.tasks.filter(task => !['accepted', 'cancelled'].includes(task.state));
   const selectedFocusTask = focusCandidates.find(task => task.id === focusTaskId);
@@ -276,7 +277,7 @@ function Workspace() {
       modalBody = <DeliveryForm busy={busy} onSave={data => run(() => mutate({ action: 'submit', id: task.id, revision: task.revision, ...data }), '已提交，等待人工审阅', true)} />;
     } else if (modal.type === 'review') {
       modalTitle = '人工审阅交付'; modalDescription = `实际审阅版本 r${task.revision} · 若任务改变，此确认会被拒绝`;
-      modalBody = <ReviewForm task={task} busy={busy} onSave={data => run(async () => { await api('review', { ticket: modal.ticket, id: task.id, revision: task.revision, ...data }); await refresh(true); }, '已记录人工决定', true)} />;
+      modalBody = <ReviewForm task={task} decision={modal.decision} busy={busy} onSave={data => run(async () => { await api('review', { ticket: modal.ticket, id: task.id, revision: task.revision, ...data }); await refresh(true); }, '已记录人工决定', true)} />;
     } else if (modal.type === 'settings') {
       modalTitle = '提醒设置'; modalDescription = `当前审阅版本 r${modal.settings.revision}`;
       modalBody = <SettingsForm settings={modal.settings} busy={busy} onSave={data => run(() => mutate({ action: 'settings', revision: modal.settings.revision, data }), '配置已保存', true)} />;
@@ -303,7 +304,7 @@ function Workspace() {
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? '已归档，可在收件箱底部恢复' : '已恢复到收件箱')} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><span className="muted">{filtered.length} 项任务 · {filteredSessions.length} 个 Codex 会话</span><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div></div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
       {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">实时状态尚未接通，当前只同步了历史会话。请在终端运行 <code>codex</code>，输入 <code>/hooks</code>，审阅并信任 ai-todos 插件的 hooks。然后重新打开需要跟踪的会话；收到运行事件后会自动显示在“进行中”。</p>}
-      {view.mode === 'board' ? <BoardView tasks={filtered} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onReschedule={reschedule} />}
+      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onNewSession={newSession} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onNewSession={newSession} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">已取消（{filtered.filter(task => task.state === 'cancelled').length}）</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

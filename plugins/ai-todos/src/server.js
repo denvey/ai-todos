@@ -19684,6 +19684,19 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
+// src/runtime.js
+function runtimeState(state) {
+  return { waiting: "waiting_approval", ended: "completed" }[state] || state || "unknown";
+}
+function codexRuntimeState(status) {
+  if (status.type === "active") {
+    if (status.activeFlags?.includes("waitingOnApproval")) return "waiting_approval";
+    if (status.activeFlags?.includes("waitingOnUserInput")) return "waiting_input";
+    return "running";
+  }
+  return status.type === "idle" ? "idle" : status.type === "systemError" ? "failed" : "unknown";
+}
+
 // src/domain.js
 var text = external_exports.string().trim().min(1).max(300);
 var note = external_exports.string().max(2e4);
@@ -19807,7 +19820,8 @@ var Store = class {
   sessions() {
     return this.db.prepare("SELECT body FROM sessions ORDER BY rowid DESC").all().map((r) => {
       const s = JSON.parse(r.body);
-      return { ...s, state: ["running", "waiting"].includes(s.observedState) && this.now() - Date.parse(s.observedAt) > 3e5 ? "unknown" : s.observedState };
+      const state = runtimeState(s.observedState);
+      return { ...s, state: ["queued", "running", "waiting_approval", "waiting_input"].includes(state) && this.now() - Date.parse(s.observedAt) > 3e5 ? "unknown" : state };
     });
   }
   snapshot() {
@@ -19895,7 +19909,7 @@ var Store = class {
         if (previous?.catalogUpdatedAt && Date.parse(thread.updatedAt) > Date.parse(previous.catalogUpdatedAt)) delete session.confirmedAt;
         if (thread.state !== "unknown" || !previous) {
           if (thread.state !== previous?.observedState || thread.updatedAt !== previous?.catalogUpdatedAt) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
-          if (!["idle", "ended"].includes(thread.state)) delete session.confirmedAt;
+          if (!["idle", "completed"].includes(runtimeState(thread.state))) delete session.confirmedAt;
         }
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
@@ -20050,7 +20064,7 @@ var Store = class {
       requireThat(row, "\u4F1A\u8BDD\u4E0D\u5B58\u5728", 404);
       const session = JSON.parse(row.body);
       requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, "\u4F1A\u8BDD\u5DF2\u53D8\u5316\uFF0C\u8BF7\u5237\u65B0\u5E76\u91CD\u65B0\u786E\u8BA4\u3002", 409);
-      requireThat(["idle", "ended"].includes(session.observedState), "\u53EA\u6709\u672C\u8F6E\u7ED3\u675F\u6216\u5DF2\u7ED3\u675F\u7684\u4F1A\u8BDD\u53EF\u4EE5\u786E\u8BA4\u5B8C\u6210");
+      requireThat(["idle", "completed"].includes(runtimeState(session.observedState)), "\u53EA\u6709\u672C\u8F6E\u7ED3\u675F\u6216\u5DF2\u7ED3\u675F\u7684\u4F1A\u8BDD\u53EF\u4EE5\u786E\u8BA4\u5B8C\u6210");
       requireThat(!this.all("task").some((task) => task.sessionId === c.id && task.state !== "cancelled"), "\u5DF2\u5173\u8054\u4EFB\u52A1\u7684\u4F1A\u8BDD\u8BF7\u901A\u8FC7\u4EFB\u52A1\u9A8C\u6536\u786E\u8BA4\u5B8C\u6210");
       if (!session.confirmedAt) {
         session.confirmedAt = this.at();
@@ -20099,9 +20113,9 @@ var Store = class {
       const row = this.db.prepare("SELECT body FROM sessions WHERE id=?").get(event.session_id);
       const previous = row ? JSON.parse(row.body) : null;
       if (["Stop", "Interrupt"].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
-      const states = { SessionStart: "idle", UserPromptSubmit: "running", PreToolUse: "running", PostToolUse: "running", PermissionRequest: "waiting", Stop: "idle", Interrupt: "interrupted", SessionEnd: "ended" };
+      const states = { SessionStart: "idle", UserPromptSubmit: "running", PreToolUse: "running", PostToolUse: "running", PermissionRequest: "waiting_approval", Stop: "idle", Interrupt: "interrupted", SessionEnd: "completed" };
       const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: "codex-hook" };
-      if (!["Stop", "SessionEnd"].includes(event.hook_event_name) || session.turnId !== previous?.turnId) delete session.confirmedAt;
+      if (!["SessionStart", "Stop", "SessionEnd"].includes(event.hook_event_name) || session.turnId !== previous?.turnId) delete session.confirmedAt;
       this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
       return session;
     });
@@ -20250,7 +20264,7 @@ async function listThreads() {
         const requestIndex = thread.preview.startsWith("# Files mentioned by the user:") ? thread.preview.indexOf("## My request:") : -1;
         const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + "## My request:".length) : thread.preview).trim();
         const title = (thread.name?.trim() || preview.replace(/\s+/g, " ") || `Codex \xB7 ${basename(thread.cwd)} \xB7 ${thread.id.slice(-8)}`).slice(0, 300);
-        const state = thread.status.type === "active" ? thread.status.activeFlags?.some((flag) => ["waitingOnApproval", "waitingOnUserInput"].includes(flag)) ? "waiting" : "running" : thread.status.type === "idle" ? "idle" : thread.status.type === "systemError" ? "interrupted" : "unknown";
+        const state = codexRuntimeState(thread.status);
         threads.push({ id: thread.id, title, preview: preview.slice(0, 2e4), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1e3).toISOString(), state });
       }
       cursor = page.nextCursor;

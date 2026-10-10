@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { runtimeState } from './runtime.js';
 
 const text = z.string().trim().min(1).max(300);
 const note = z.string().max(20000);
@@ -83,7 +84,8 @@ export class Store {
   sessions() {
     return this.db.prepare('SELECT body FROM sessions ORDER BY rowid DESC').all().map(r => {
       const s = JSON.parse(r.body);
-      return { ...s, state: ['running', 'waiting'].includes(s.observedState) && this.now() - Date.parse(s.observedAt) > 300000 ? 'unknown' : s.observedState };
+      const state = runtimeState(s.observedState);
+      return { ...s, state: ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(state) && this.now() - Date.parse(s.observedAt) > 300000 ? 'unknown' : state };
     });
   }
   snapshot() {
@@ -154,7 +156,7 @@ export class Store {
         if (previous?.catalogUpdatedAt && Date.parse(thread.updatedAt) > Date.parse(previous.catalogUpdatedAt)) delete session.confirmedAt;
         if (thread.state !== 'unknown' || !previous) {
           if (thread.state !== previous?.observedState || thread.updatedAt !== previous?.catalogUpdatedAt) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: 'thread/list', source: 'codex-app-server' });
-          if (!['idle', 'ended'].includes(thread.state)) delete session.confirmedAt;
+          if (!['idle', 'completed'].includes(runtimeState(thread.state))) delete session.confirmedAt;
         }
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session));
@@ -292,7 +294,7 @@ export class Store {
       requireThat(row, '会话不存在', 404);
       const session = JSON.parse(row.body);
       requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, '会话已变化，请刷新并重新确认。', 409);
-      requireThat(['idle', 'ended'].includes(session.observedState), '只有本轮结束或已结束的会话可以确认完成');
+      requireThat(['idle', 'completed'].includes(runtimeState(session.observedState)), '只有本轮结束或已结束的会话可以确认完成');
       requireThat(!this.all('task').some(task => task.sessionId === c.id && task.state !== 'cancelled'), '已关联任务的会话请通过任务验收确认完成');
       if (!session.confirmedAt) {
         session.confirmedAt = this.at();
@@ -335,9 +337,9 @@ export class Store {
       const row = this.db.prepare('SELECT body FROM sessions WHERE id=?').get(event.session_id);
       const previous = row ? JSON.parse(row.body) : null;
       if (['Stop', 'Interrupt'].includes(event.hook_event_name) && previous?.turnId && event.turn_id && previous.turnId !== event.turn_id) return previous;
-      const states = { SessionStart: 'idle', UserPromptSubmit: 'running', PreToolUse: 'running', PostToolUse: 'running', PermissionRequest: 'waiting', Stop: 'idle', Interrupt: 'interrupted', SessionEnd: 'ended' };
+      const states = { SessionStart: 'idle', UserPromptSubmit: 'running', PreToolUse: 'running', PostToolUse: 'running', PermissionRequest: 'waiting_approval', Stop: 'idle', Interrupt: 'interrupted', SessionEnd: 'completed' };
       const session = { ...previous, id: event.session_id, cwd: event.cwd, observedState: states[event.hook_event_name], observedAt: this.at(), event: event.hook_event_name, turnId: event.turn_id ?? previous?.turnId ?? null, source: 'codex-hook' };
-      if (!['Stop', 'SessionEnd'].includes(event.hook_event_name) || session.turnId !== previous?.turnId) delete session.confirmedAt;
+      if (!['SessionStart', 'Stop', 'SessionEnd'].includes(event.hook_event_name) || session.turnId !== previous?.turnId) delete session.confirmedAt;
       this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session)); return session;
     });
   }

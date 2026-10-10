@@ -4,6 +4,7 @@ import { Check, ChevronRight, CornerDownLeft, Inbox, ListPlus, ListTodo, Pause, 
 import { FocusCard } from './FocusCard.jsx';
 import { Field } from './TaskEditor.jsx';
 import { labels, localDay, priorityLabels } from '../format.js';
+import { taskStatus } from '../execution-board.js';
 
 export function dayPlans(plans, day) {
   return plans.filter(plan => plan.date === day).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -66,7 +67,7 @@ function TaskRow({ task, focus, busy, onOpenTask, onTaskAction, onFocusTask }) {
   const action = complete ? '重开任务' : task.state === 'awaiting_acceptance' ? '审阅交付' : '打开任务处理交付';
   return <div className={`task-row ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''}`}>
     <button className="task-check" onClick={() => onTaskAction(task)} disabled={busy} aria-label={`${action} ${task.title}`} title={action}>{complete && <Check size={14} />}</button>
-    <button className="task-main" onClick={() => onOpenTask(task.id)} disabled={busy} aria-label={`打开任务 ${task.title}`}><span className="task-title">{task.title}</span><span className="task-meta"><span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span><span className="planned-label">今日</span><span className={`workflow-label ${task.state === 'awaiting_acceptance' ? 'awaiting' : task.state === 'changes_requested' ? 'changes' : ''}`}>{labels[task.state]}</span>{active && <span className={`focus-state-label ${paused ? 'is-paused' : ''}`}>{paused ? '专注暂停中' : '当前专注'}</span>}</span></button>
+    <button className="task-main" onClick={() => onOpenTask(task.id)} disabled={busy} aria-label={`打开任务 ${task.title}`}><span className="task-title">{task.title}</span><span className="task-meta"><span className={`priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span><span className="planned-label">今日</span><span className={`workflow-label ${task.state === 'awaiting_acceptance' ? 'awaiting' : task.state === 'changes_requested' ? 'changes' : ''}`}>{taskStatus(task)}</span>{active && <span className={`focus-state-label ${paused ? 'is-paused' : ''}`}>{paused ? '专注暂停中' : '当前专注'}</span>}</span></button>
     {!complete ? <button className={`task-focus ${active ? 'is-active' : ''}`} onClick={() => onFocusTask(task)} disabled={busy} aria-label={`${active ? paused ? '继续专注' : '暂停专注' : '开始专注'} ${task.title}`} title={active ? paused ? '继续专注' : '暂停专注' : '开始专注'}>{active && !paused ? <Pause size={16} fill="currentColor" /> : <Play size={17} fill="currentColor" />}</button> : <span className="task-focus-placeholder" aria-hidden="true" />}
   </div>;
 }
@@ -88,7 +89,7 @@ export function TodayView({ snapshot, busy, visible, elapsedMs, onAdd, onCapture
     {snapshot.focus.status === 'idle' && progress}
     <FocusCard focus={snapshot.focus} busy={busy} task={fallback} elapsedMs={elapsedMs} onStart={() => onFocusTask(fallback)} onPause={() => onFocusOp('pause')} onResume={() => onFocusOp('resume')} onEnd={() => onFocusOp('finish')} onNeedTask={() => quickRef.current?.focus()} />
     {snapshot.focus.status !== 'idle' && progress}
-    <section className="card task-section" aria-labelledby="tasks-heading"><div className="section-heading"><h2 id="tasks-heading">今日任务</h2><div className="section-heading__actions"><button className="text-button" disabled={busy} onClick={onInbox}><Inbox size={14} />收件箱{inboxCount ? ` ${inboxCount}` : ''}</button><span className="count-label">{active.filter(task => task.state === 'awaiting_acceptance').length > 0 ? `${active.filter(task => task.state === 'awaiting_acceptance').length} 待验收 · ` : ''}{active.length} 未完成</span></div></div>
+    <section className="card task-section" aria-labelledby="tasks-heading"><div className="section-heading"><h2 id="tasks-heading">今日任务</h2><div className="section-heading__actions"><button className="text-button" disabled={busy} onClick={onInbox}><Inbox size={14} />收件箱{inboxCount ? ` ${inboxCount}` : ''}</button><span className="count-label">{active.filter(task => task.state === 'awaiting_acceptance').length > 0 ? `${active.filter(task => task.state === 'awaiting_acceptance').length} 待我验收 · ` : ''}{active.length} 未完成</span></div></div>
       <QuickCapture ref={quickRef} busy={busy} visible={visible} onAdd={onAdd} onCapture={onCapture} onRefine={onRefine} onCreateTask={onCreateTask} />
       <div className="task-list">{active.map(row)}{!active.length && <div className="empty-state"><strong>{unplanned.length ? '今天还没安排任务' : '今天还没有待执行任务'}</strong><span>{unplanned.length ? `待办池还有 ${unplanned.length} 项未完成任务，选好后即可开始。` : inboxCount ? '收件箱里已有想法，整理并确认后再加入今天。' : '直接在上方添加任务，保存后会自动加入今天。'}</span></div>}</div>
       {!!finished.length && <details className="completed-group" open={completedOpen} onToggle={event => setCompletedOpen(event.currentTarget.open)}><summary>今日已验收 {accepted}{finished.length > accepted ? ` · 已取消 ${finished.length - accepted}` : ''}</summary>{finished.map(row)}</details>}

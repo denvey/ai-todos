@@ -32,7 +32,7 @@ test('human session confirmation checks the displayed version and binding, and c
   const thread = { id, title: '会话', cwd: '/tmp/project', updatedAt: s.at(), state: 'unknown' };
   s.syncCodexThreads([thread]); s.syncCodexThreads([thread]);
   assert.equal(s.sessions()[0].confirmedAt, confirmed.confirmedAt);
-  assert.equal(s.sessions()[0].state, 'ended');
+  assert.equal(s.sessions()[0].state, 'completed');
   now++; s.syncCodexThreads([{ ...thread, updatedAt: s.at() }]);
   assert.equal(s.sessions()[0].confirmedAt, undefined);
   s.confirmSession(input()); observe('UserPromptSubmit', 'turn-3');
@@ -50,4 +50,10 @@ test('human session confirmation checks the displayed version and binding, and c
   s.command({ action: 'bind', id: task.id, revision: task.revision, sessionId: id });
   assert.throws(() => s.confirmSession(input()), /任务验收/);
   assert.equal(commandSchema.safeParse({ action: 'confirm_session', ...input() }).success, false);
+  for (const state of ['waiting', 'waiting_input', 'queued']) {
+    const oldId = randomUUID();
+    s.db.prepare('INSERT INTO sessions VALUES (?,?)').run(oldId, JSON.stringify({ id: oldId, observedState: state, observedAt: s.at() }));
+  }
+  now += 300001;
+  assert.ok(s.sessions().filter(session => session.id !== id).every(session => session.state === 'unknown'));
 });

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, normalize } from 'node:path';
 import { z } from 'zod';
 import { DomainError, schemas } from './domain.js';
+import { codexRuntimeState } from './runtime.js';
 
 const draftSchema = schemas.task.pick({ title: true, description: true, criteria: true, projectId: true });
 const suggestionSchema = schemas.task.pick({ description: true, criteria: true }).required();
@@ -100,7 +101,7 @@ async function listThreads() {
         const requestIndex = thread.preview.startsWith('# Files mentioned by the user:') ? thread.preview.indexOf('## My request:') : -1;
         const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + '## My request:'.length) : thread.preview).trim();
         const title = (thread.name?.trim() || preview.replace(/\s+/g, ' ') || `Codex · ${basename(thread.cwd)} · ${thread.id.slice(-8)}`).slice(0, 300);
-        const state = thread.status.type === 'active' ? (thread.status.activeFlags?.some(flag => ['waitingOnApproval', 'waitingOnUserInput'].includes(flag)) ? 'waiting' : 'running') : thread.status.type === 'idle' ? 'idle' : thread.status.type === 'systemError' ? 'interrupted' : 'unknown';
+        const state = codexRuntimeState(thread.status);
         threads.push({ id: thread.id, title, preview: preview.slice(0, 20000), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1000).toISOString(), state });
       }
       cursor = page.nextCursor;
