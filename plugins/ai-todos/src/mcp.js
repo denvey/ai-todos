@@ -36662,12 +36662,17 @@ async function ensureService() {
 }
 async function service(path, value) {
   if (!runtime) await ensureService();
-  const response = await fetch(`${runtime.origin}/internal/${path}`, {
+  const request = () => fetch(`${runtime.origin}/internal/${path}`, {
     method: value === void 0 ? "GET" : "POST",
     headers: { authorization: `Bearer ${runtime.token}`, "content-type": "application/json" },
     ...value === void 0 ? {} : { body: JSON.stringify(value) },
     signal: AbortSignal.timeout(path === "codex" ? 13e4 : 1e4)
   });
+  let response = await request();
+  if (response.status === 401) {
+    await ensureService();
+    response = await request();
+  }
   const result2 = await response.json();
   if (!response.ok) throw new Error(result2.error);
   return result2;

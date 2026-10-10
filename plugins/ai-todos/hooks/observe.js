@@ -19886,7 +19886,7 @@ var Store = class {
         seen.add(thread.id);
         const previous = existing.get(thread.id);
         const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
-        if (thread.state !== "unknown" || !previous || Date.parse(thread.updatedAt) > Date.parse(previous.observedAt)) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
+        if (thread.state !== "unknown" || !previous) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
@@ -20125,9 +20125,8 @@ try {
   const store = new Store(dbPath);
   try {
     const session = store.observe(event);
-    if (event.hook_event_name === "SessionStart" || event.hook_event_name === "UserPromptSubmit") {
-      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event.hook_event_name, additionalContext: `ai-todos \u53EF\u4FE1 Codex sessionId=${session.id}\u3002\u53EF\u7528 ai_todos_snapshot \u67E5\u8BE2\u540E\u7ED1\u5B9A\u539F\u4EFB\u52A1\uFF1BStop \u4EC5\u7ED3\u675F\u4E00\u8F6E\uFF0C\u771F\u5B9E\u4EA4\u4ED8\u9700\u8BC1\u636E\uFF0C\u4EBA\u9A8C\u6536\u9700\u660E\u786E\u786E\u8BA4\u3002` } }));
-    }
+    const output2 = event.hook_event_name === "SessionStart" || event.hook_event_name === "UserPromptSubmit" ? { hookSpecificOutput: { hookEventName: event.hook_event_name, additionalContext: `ai-todos \u53EF\u4FE1 Codex sessionId=${session.id}\u3002\u53EF\u7528 ai_todos_snapshot \u67E5\u8BE2\u540E\u7ED1\u5B9A\u539F\u4EFB\u52A1\uFF1BStop \u4EC5\u7ED3\u675F\u4E00\u8F6E\uFF0C\u771F\u5B9E\u4EA4\u4ED8\u9700\u8BC1\u636E\uFF0C\u4EBA\u9A8C\u6536\u9700\u660E\u786E\u786E\u8BA4\u3002` } } : {};
+    process.stdout.write(JSON.stringify(output2));
   } finally {
     store.close();
   }

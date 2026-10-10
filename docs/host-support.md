@@ -67,3 +67,7 @@ Codex 会话同步迁移：参考心魔 execution-board.ts 和 AiSessionCard，�
 用户截图反馈：历史会话运行状态未知，不应归入未开始。未知会话现放入默认折叠的“其他 Codex 会话”，保留搜索、项目筛选、打开原会话和分批加载；四列数量分别标注任务与会话。侧边栏图标此前只在插件 interface 中配置，而官方入口示例使用工具的 icons。现在同时提供 MCP serverInfo.icons 与 ai_todos_open 的标准 icons，内嵌现有 PNG，无远程资源。已安装 SDK 1.32.1 的 registerTool 不保留 icons，因此在 STDIO send 时只补齐该入口工具的图标，不改变其他工具、schema 或调用处理；宿主重新加载后的实际图标仍需确认。
 
 本次定向检查：打包后真实 STDIO 初始化响应与 tools/list 均返回和 assets/icon.png 一致的 PNG data URI，五个工具仍可发现，global 入口保留。只读日常快照并服务端渲染看板时，当前业务任务为 1 项、未开始任务为 1 项；2,198 条未知会话留在折叠列表中，默认没有渲染会话卡片。未重跑完整业务套件，未操作用户草稿或重启 Codex。
+
+进行中会话缺失排查：本机 Codex CLI 0.160.0 的 hooks/list 与 plugin/read 均未发现 ai-todos 的 hooks。官方源码 core-plugins/src/loader.rs 对 AgentPlugin 格式返回空 hook_sources；通用根 plugin.json 的优先级高于兼容清单。因此改为只在发布包保留 Codex 原生清单，根开发清单继续作为打包元数据来源。同步未知历史状态只更新会话目录，不覆盖运行事件；hook 对 Stop 等事件返回有效空 JSON；服务收到旧凭据的 401 时通过既有 ensureService 重连，仅重试一次已被鉴权拒绝的请求。
+
+本轮隔离检查：打包 hook 的 UserPromptSubmit 写入 running，随后更晚的历史元数据未覆盖它；服务端渲染显示在进行中列。Stop 输出 {} 并写入 idle，不创建业务任务或验收；服务重启后原客户端刷新凭据并读到保留的快照。用户表示已审阅并信任 hooks，真实桌面端加载及事件接收需单独确认，没有在日常数据库注入运行事件。

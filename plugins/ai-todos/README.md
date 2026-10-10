@@ -21,6 +21,8 @@ codex plugin add ai-todos@ai-todos-local
 
 仓库附带预构建插件，安装无需运行 npm 或编译。安装后开启新会话，输入“打开 ai-todos 工作台”；用 `/hooks` 审阅并信任插件 hooks，才能接收兼容模式的 AI 运行事件。历史会话同步无需 hooks。若客户端没有显示 MCP App，使用工具返回的本地浏览器地址。用户当前客户端已确认侧边栏入口可用。
 
+发布包使用 Codex 原生 `.codex-plugin/plugin.json`。当前 Codex 会跳过通用 Agent Plugins 格式中的 hooks，因此包内不同时放根 `plugin.json`。若正在执行的会话仍显示未知，在终端运行 `codex`，通过 `/hooks` 检查 ai-todos 的 8 个事件是否已启用并信任，再重新打开需要跟踪的会话。工作台没有收到运行事件时会显示提示；历史同步不会覆盖已观察到的运行状态。
+
 已添加同名本地 marketplace 的开发者应先按 `codex plugin marketplace --help` 管理现有来源，避免来源名称冲突。源码开发和本机打包方法见下文。
 
 ## 快速开始

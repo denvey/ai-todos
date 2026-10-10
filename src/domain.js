@@ -150,7 +150,7 @@ export class Store {
         seen.add(thread.id);
         const previous = existing.get(thread.id);
         const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
-        if (thread.state !== 'unknown' || !previous || Date.parse(thread.updatedAt) > Date.parse(previous.observedAt)) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: 'thread/list', source: 'codex-app-server' });
+        if (thread.state !== 'unknown' || !previous) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: 'thread/list', source: 'codex-app-server' });
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;

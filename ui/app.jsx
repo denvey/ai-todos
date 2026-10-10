@@ -120,6 +120,7 @@ function dailyTotals(snapshot) {
 function Workspace() {
   const [snapshot, setSnapshot] = useState(null);
   const [connectionError, setConnectionError] = useState('');
+  const [threadTransport, setThreadTransport] = useState(null);
   const [view, setView] = useState({ page: 'today', mode: 'board', project: '', search: '' });
   const [modal, setModal] = useState(null);
   const [error, setError] = useState('');
@@ -169,7 +170,7 @@ function Workspace() {
   const syncThreads = async () => {
     if (syncingThreads.current) return syncingThreads.current;
     const pending = api('codex', { operation: 'sync_threads' }); syncingThreads.current = pending;
-    try { const result = await pending; lastThreadSync.current = Date.now(); await refresh(true); return result; }
+    try { const result = await pending; setThreadTransport(result.transport); lastThreadSync.current = Date.now(); await refresh(true); return result; }
     finally { if (syncingThreads.current === pending) syncingThreads.current = null; }
   };
   const syncWorkspace = () => run(async () => {
@@ -290,6 +291,7 @@ function Workspace() {
     <TodayView snapshot={snapshot} busy={busy} visible={view.page === 'today'} elapsedMs={elapsedMs} onAdd={addToday} onCapture={captureInbox} onRefine={refineCapture} onCreateTask={createToday} onOpenTask={openTask} onTaskAction={taskAction} onFocusTask={focusTask} onFocusOp={focusOp} onInbox={openInbox} onPlan={() => { const date = localDay(new Date()); open({ type: 'daily_plan', date, plans: dayPlans(snapshot.plans, date) }); }} />
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? '已归档，可在收件箱底部恢复' : '已恢复到收件箱')} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><span className="muted">{filtered.length} 项任务 · {filteredSessions.length} 个 Codex 会话</span><div className="segmented-control">{[['board', '看板'], ['timeline', '时间线']].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div></div><div className="execution-filters"><SelectField label="项目" value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: '全部项目' }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label="搜索任务" placeholder="搜索任务…" value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
+      {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">实时状态尚未接通，当前只同步了历史会话。请在终端运行 <code>codex</code>，输入 <code>/hooks</code>，审阅并信任 ai-todos 插件的 hooks。然后重新打开需要跟踪的会话；收到运行事件后会自动显示在“进行中”。</p>}
       {view.mode === 'board' ? <BoardView tasks={filtered} sessions={filteredSessions} onOpenSession={openSession} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">已取消（{filtered.filter(task => task.state === 'cancelled').length}）</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}

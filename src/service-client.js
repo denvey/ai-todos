@@ -27,9 +27,11 @@ export async function ensureService() {
 }
 export async function service(path, value) {
   if (!runtime) await ensureService();
-  const response = await fetch(`${runtime.origin}/internal/${path}`, {
+  const request = () => fetch(`${runtime.origin}/internal/${path}`, {
     method: value === undefined ? 'GET' : 'POST', headers: { authorization: `Bearer ${runtime.token}`, 'content-type': 'application/json' },
     ...(value === undefined ? {} : { body: JSON.stringify(value) }), signal: AbortSignal.timeout(path === 'codex' ? 130000 : 10000),
   });
+  let response = await request();
+  if (response.status === 401) { await ensureService(); response = await request(); }
   const result = await response.json(); if (!response.ok) throw new Error(result.error); return result;
 }

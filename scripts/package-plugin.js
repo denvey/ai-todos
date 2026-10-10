@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import './build.js';
 const target = resolve('plugins/ai-todos');
@@ -7,7 +7,8 @@ const nodeCommand = process.argv.includes('--portable') ? 'node' : process.execP
 mkdirSync(target, { recursive: true });
 await build({ entryPoints: ['src/mcp.js', 'src/server.js', 'hooks/observe.js', 'scripts/open.js', 'scripts/stop.js'], bundle: true, platform: 'node', format: 'esm', target: 'node24', outbase: '.', outdir: target, packages: 'bundle', banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' } });
 for (const path of ['dist', 'skills', 'docs', 'assets', 'README.md']) cpSync(path, `${target}/${path}`, { recursive: true });
-cpSync('plugin.json', `${target}/plugin.json`);
+// Codex skips hooks for the root Agent Plugins manifest; use its native manifest.
+rmSync(`${target}/plugin.json`, { force: true });
 writeFileSync(`${target}/package.json`, JSON.stringify({ name: 'ai-todos', version: '0.1.0', private: true, type: 'module', engines: { node: '>=24' } }, null, 2));
 const mcp = JSON.parse(readFileSync('mcp.json', 'utf8'));
 mcp.mcpServers['ai-todos'].command = nodeCommand;
