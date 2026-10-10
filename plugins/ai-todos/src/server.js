@@ -20169,13 +20169,9 @@ var origin = `http://127.0.0.1:${port}`;
 
 // ui/codex-prompts.ts
 function taskSessionPrompt(task) {
-  return `# ${task.title}
-
-## \u4EFB\u52A1\u5185\u5BB9
-${task.description.trim() || "\u672A\u586B\u5199"}
-
-## \u9A8C\u6536\u6807\u51C6
-${task.criteria.trim() || "\u672A\u586B\u5199"}`;
+  return [task.title, task.description.trim() && `\u4EFB\u52A1\u5185\u5BB9\uFF1A
+${task.description.trim()}`, task.criteria.trim() && `\u9A8C\u6536\u6807\u51C6\uFF1A
+${task.criteria.trim()}`].filter(Boolean).join("\n\n");
 }
 
 // src/codex.ts
@@ -20247,7 +20243,7 @@ async function withCodex(action, timeout, shared = false) {
   });
   try {
     return await Promise.race([failure2, (async () => {
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.5" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.6" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -20469,7 +20465,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: "\u4EC5\u5141\u8BB8\u672C\u673A\u56DE\u73AF\u5730\u5740" });
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.5" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.6" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: "Unauthorized" });
       if (path === "/internal/ping") return send(res, 200, { ok: true });

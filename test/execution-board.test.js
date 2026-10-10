@@ -9,7 +9,7 @@ const runtime = state => ({ id: 'session', state, observedAt: '2026-10-10T00:00:
 
 test('bound planning sessions remain represented by their original task', () => {
   const prompt = taskSessionPrompt({ title: '原任务', description: '要做的内容', criteria: '验收要求' });
-  assert.equal(prompt, '# 原任务\n\n## 任务内容\n要做的内容\n\n## 验收标准\n验收要求');
+  assert.equal(prompt, '原任务\n\n任务内容：\n要做的内容\n\n验收标准：\n验收要求');
   const session = runtime('running');
   const bound = task('defining', { ...session, mode: 'planning' });
   assert.equal(executionColumnForTask(bound), 'executing');

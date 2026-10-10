@@ -5,5 +5,5 @@ export function executionPrompt(task: Pick<Task, 'id' | 'title' | 'sessionId'>) 
 }
 
 export function taskSessionPrompt(task: Pick<Task, 'title' | 'description' | 'criteria'>) {
-  return `# ${task.title}\n\n## 任务内容\n${task.description.trim() || '未填写'}\n\n## 验收标准\n${task.criteria.trim() || '未填写'}`;
+  return [task.title, task.description.trim() && `任务内容：\n${task.description.trim()}`, task.criteria.trim() && `验收标准：\n${task.criteria.trim()}`].filter(Boolean).join('\n\n');
 }

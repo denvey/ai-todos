@@ -19,7 +19,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.5' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.6' }, {}, { autoResize: true }) : null;
 function applyDisplayName(locale?: string) {
   const chinese = /^zh(?:-|$)/i.test(locale || navigator.language);
   document.title = chinese ? '任务 · 工作台' : 'Todos · Workspace';

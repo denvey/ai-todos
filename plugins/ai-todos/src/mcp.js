@@ -36638,7 +36638,7 @@ import { join as join3 } from "node:path";
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.5",
+  version: "0.1.6",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
@@ -36733,7 +36733,7 @@ async function service(path, value) {
 // src/mcp.ts
 await ensureService();
 var icons = [{ src: `data:image/png;base64,${readFileSync2(new URL("../assets/icon.png", import.meta.url)).toString("base64")}`, mimeType: "image/png" }];
-var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.5", icons });
+var server = new McpServer({ name: "ai-todos", title: "Todos", version: "0.1.6", icons });
 var uri = "ui://ai-todos/app.html";
 var result = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
 var guarded = (fn) => async (args) => {
