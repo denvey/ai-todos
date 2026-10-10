@@ -1,7 +1,7 @@
 // Adapted from Xinmo Desktop TaskEditor.tsx: definition, advanced fields and AI workbench.
 import { useEffect, useId, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Code2, Link2, Save, Sparkles, X } from 'lucide-react';
+import { Code2, Link2, MessageSquarePlus, Save, Sparkles, X } from 'lucide-react';
 import { DatePickerField, SelectField } from './FormControls';
 import { AiBadge } from './ExecutionView.jsx';
 import { dateInput, fmt, hours, labels, parseSchedule, runtimeLabels } from '../format.js';
@@ -33,11 +33,13 @@ export function Delivery({ task }) {
   return <section className="dialog-section"><h3>交付证据</h3><p>{delivery.summary}</p>{delivery.evidence.map((evidence, index) => <div className="evidence" key={index}><strong>{evidence.label}</strong><p>{/^https?:\/\//.test(evidence.uri) ? <a href={evidence.uri} target="_blank" rel="noreferrer">{evidence.uri}</a> : <span className="mono">{evidence.uri}</span>}</p><p>{evidence.note}</p></div>)}<p className="muted">提交于 {fmt(delivery.submittedAt)}</p></section>;
 }
 
-export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, onRefine, onSyncProjects, onTransition, onBind, onSubmitDelivery, onReview, onFocus, onPrompt, onDelete }) {
+export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, onRefine, onSyncProjects, onTransition, onBind, onSubmitDelivery, onReview, onFocus, onPrompt, onNewSession, onDelete }) {
   const creating = !task.id;
   const editable = creating || !['accepted', 'awaiting_acceptance', 'cancelled'].includes(task.state);
   const disabled = busy || !editable;
   const [values, setValues] = useState(() => ({ title: task.title || '', description: task.description || '', criteria: task.criteria || '', priority: task.priority || 'normal', projectId: task.projectId || '', keyResultId: task.keyResultId || '', remindAt: dateInput(task.remindAt), plannedStart: dateInput(task.plannedStart), plannedEnd: dateInput(task.plannedEnd) }));
+  const savedValues = useRef(values);
+  const hasChanges = Object.keys(values).some(key => values[key] !== savedValues.current[key]);
   const [sessionId, setSessionId] = useState(task.sessionId || '');
   const [aiPreview, setAiPreview] = useState(null);
   const [refining, setRefining] = useState(null);
@@ -55,7 +57,7 @@ export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, on
   const transitions = { defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['executing', 'cancelled'], accepted: ['defining'], cancelled: ['defining'], awaiting_acceptance: [] }[task.state] || [];
   return <form onSubmit={event => { event.preventDefault(); onSave({ title: values.title, description: values.description, criteria: values.criteria, priority: values.priority, projectId: values.projectId || null, keyResultId: values.keyResultId || null, remindAt: values.remindAt ? new Date(values.remindAt).toISOString() : null, ...parseSchedule(values) }); }}>
     <div className="task-editor__body">
-      {!creating && <div className="row"><span className={`execution-status status-${task.state}`}>{labels[task.state]}</span><AiBadge task={{ ...task, ai: snapshot.tasks.find(item => item.id === task.id)?.ai }} /><span className="mono">r{task.revision}</span></div>}
+      {!creating && <div className="row"><span className={`execution-status status-${task.state}`}>{labels[task.state]}</span><AiBadge task={{ ...task, ai: snapshot.tasks.find(item => item.id === task.id)?.ai }} /><span className="mono">r{task.revision}</span>{!task.sessionId && ['defining', 'ready', 'changes_requested'].includes(task.state) && onNewSession && <><button type="button" className="quiet small" disabled={busy || hasChanges} onClick={onNewSession}><MessageSquarePlus size={14} />新建 Codex 会话</button>{hasChanges && <small className="muted">请先保存更改</small>}</>}</div>}
       <Field label="任务名称" value={values.title} onChange={value => setValue('title', value)} required maxLength={300} disabled={disabled} autoFocus placeholder="输入任务，AI 可完善标题与定义" action={aiAction('title', '任务名称')} />
       {task.capture && <details className="editor-advanced"><summary><span><strong>收件箱原始想法</strong><small>{fmt(task.capture.capturedAt)}</small></span></summary><p className="editor-advanced__body">{task.capture.title}</p></details>}
       <fieldset className="editor-field priority-field" disabled={disabled}><legend>优先级</legend><div className="priority-segment">{[['low', '低'], ['normal', '普通'], ['high', '高']].map(([value, label]) => <button key={value} type="button" className={values.priority === value ? 'is-active' : ''} aria-pressed={values.priority === value} onClick={() => setValue('priority', value)}>{label}</button>)}</div></fieldset>

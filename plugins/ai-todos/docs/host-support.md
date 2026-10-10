@@ -71,3 +71,7 @@ Codex 会话同步迁移：参考心魔 execution-board.ts 和 AiSessionCard，�
 进行中会话缺失排查：本机 Codex CLI 0.160.0 的 hooks/list 与 plugin/read 均未发现 ai-todos 的 hooks。官方源码 core-plugins/src/loader.rs 对 AgentPlugin 格式返回空 hook_sources；通用根 plugin.json 的优先级高于兼容清单。因此改为只在发布包保留 Codex 原生清单，根开发清单继续作为打包元数据来源。同步未知历史状态只更新会话目录，不覆盖运行事件；hook 对 Stop 等事件返回有效空 JSON；服务收到旧凭据的 401 时通过既有 ensureService 重连，仅重试一次已被鉴权拒绝的请求。
 
 本轮隔离检查：打包 hook 的 UserPromptSubmit 写入 running，随后更晚的历史元数据未覆盖它；服务端渲染显示在进行中列。Stop 输出 {} 并写入 idle，不创建业务任务或验收；服务重启后原客户端刷新凭据并读到保留的快照。用户表示已审阅并信任 hooks，真实桌面端加载及事件接收需单独确认，没有在日常数据库注入运行事件。
+
+补充实际运行证据：通过官方 CLI /hooks 保存 ai-todos 的 8 个信任条目，hooks/list 返回全部 trusted。真实 CLI 会话 01a124f4-9aae-7633-9eae-8d116307e1e2 依次产生 SessionStart / idle、UserPromptSubmit / running、SessionEnd / ended，模型返回 OK。同时修正原生 MCP 配置不展开 ${PLUGIN_ROOT} 的问题，采用 cwd="." 和相对入口；安装后官方 mcpServerStatus/list 返回 5 个工具，toolsError 为 null。桌面当前会话实时状态仍未独立验证。
+
+新建会话入口：复用 MCP Apps ui/message，将明确的创建请求发送给当前宿主，要求其使用 create_thread 和 navigate_to_codex_page；由新会话通过可信 hooks 与现有 bind 关联原业务任务。保留版本核对、项目目录匹配和绑定状态限制。独立浏览器只能复制创建指令。没有新增后台 CLI 执行服务或调用私有 IPC；实际桌面消息触发创建仍待用户客户端验证。
