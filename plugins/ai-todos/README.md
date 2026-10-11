@@ -1,6 +1,6 @@
 # Todos
 
-English | [简体中文](README.zh-CN.md)
+English | [Simplified Chinese](README.zh-CN.md)
 
 A task and focus workspace for Codex. Manage tasks, projects, OKRs, and daily plans, track focus time, and review AI deliveries in one place. Data is stored locally in SQLite.
 
@@ -43,7 +43,7 @@ Start a new chat and reopen the workspace. Restart Codex if the old interface re
 - **Projects and OKRs:** organize tasks by project and track objectives and key results.
 - **Focus:** start, pause, resume, and end a timer. An active timer keeps running through sleep or closing Codex until you pause or end it.
 - **Review:** inspect the delivery summary and evidence, then accept or request changes. AI stopping does not automatically complete or accept a task.
-- **Settings:** choose Automatic, 简体中文, or English, and configure reminders and time zone. Language changes apply immediately; your content stays in its original language.
+- **Settings:** choose Automatic, Simplified Chinese, or English, and configure reminders and time zone. Language changes apply immediately; your content stays in its original language.
 
 Browser notifications require permission and an open page. Reminders pause while the service is stopped or the machine is asleep; they do not trigger AI execution.
 
