@@ -94,6 +94,12 @@ npm run open
 
 启动本地服务并打开 `http://127.0.0.1:16943`。首次打开为空工作台。在源码目录运行 `npm run stop` 可停止服务。
 
+## 发版
+
+每次推送到 `main` 都会运行发版 workflow：自动递增 patch 版本，使用 Node.js 24 构建便携插件，将版本号和预构建插件提交回 `main`，然后创建 `v<版本号>` GitHub Release，附带 `.zip`、`.tar.gz` 安装包和自动生成的发布说明。发版提交使用 `GITHUB_TOKEN`，不会再次触发发版。并发合并按最新的 `main` 构建，可能合并为一次发版。
+
+workflow 需要 `contents: write` 权限；仓库规则须允许 `github-actions[bot]` 向 `main` 推送发版提交。如果构建期间 `main` 收到新提交，原子推送会失败且不会覆盖它，重新运行 workflow 即可。重跑已打 tag 的版本会复用版本号并重新上传安装包。也可在 Actions 页选择 **Release**，在 `main` 上手动运行。
+
 ## 本地数据
 
 数据库位于 `~/.ai-todos/ai-todos.sqlite`。服务仅监听 `127.0.0.1`。卸载插件不会删除数据，也不会停止服务。

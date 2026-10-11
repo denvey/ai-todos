@@ -94,6 +94,12 @@ npm run open
 
 This starts the local service and opens `http://127.0.0.1:16943`. The first workspace is empty. Run `npm run stop` from the checkout to stop the service.
 
+## Releases
+
+Every push to `main` runs the release workflow: it increments the patch version, builds the portable plugin with Node.js 24, commits the version and prebuilt plugin back to `main`, and publishes a `v<version>` GitHub Release with `.zip` and `.tar.gz` bundles and generated release notes. The release commit uses `GITHUB_TOKEN`, so it does not trigger another release run. Concurrent merges are released from the latest `main` checkout and may share one release.
+
+The workflow needs `contents: write`; repository rules must allow `github-actions[bot]` to push release commits to `main`. If another commit reaches `main` during the build, the atomic push fails without overwriting it; rerun the workflow. Rerunning a tagged release reuses its version and uploads the bundles again. You can also run **Release** manually from the Actions tab on `main`.
+
 ## Local data
 
 The database is stored at `~/.ai-todos/ai-todos.sqlite`. The service listens only on `127.0.0.1`. Uninstalling the plugin does not delete your data or stop the service.
