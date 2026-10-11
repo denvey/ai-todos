@@ -43791,7 +43791,7 @@ import { join as join3 } from "node:path";
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.10",
+  version: "0.1.11",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
