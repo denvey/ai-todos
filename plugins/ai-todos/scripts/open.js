@@ -22,7 +22,7 @@ var origin = `http://127.0.0.1:${port}`;
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.7",
+  version: "0.1.8",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",

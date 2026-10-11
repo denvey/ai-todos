@@ -1,6 +1,6 @@
 {
-  "name": "ai-todos-local",
-  "interface": { "displayName": "ai-todos Local" },
+  "name": "ai-todos",
+  "interface": { "displayName": "ai-todos" },
   "plugins": [
     {
       "name": "ai-todos",

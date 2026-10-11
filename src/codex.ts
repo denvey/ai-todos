@@ -75,7 +75,7 @@ async function withCodex<T>(action: (connection: CodexConnection) => T | Promise
   });
   try {
     return await Promise.race([failure, (async () => {
-      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.7' }, capabilities: { experimentalApi: true } });
+      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.8' }, capabilities: { experimentalApi: true } });
       send({ method: 'initialized' });
       return action({ cwd, request, notifications: listener => { onNotification = listener; } });
     })()]);

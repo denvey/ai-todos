@@ -1,183 +1,172 @@
-# Todos · 任务
+# Todos
 
-英文产品名 **Todos**，中文显示名 **任务**。插件安装标识仍为 `ai-todos@ai-todos-local`。当前侧边栏配置使用中文名，工作台页面标题按宿主或浏览器语言显示；官方本地插件显示名配置未确认支持自动语言切换。
+English | [简体中文](README.zh-CN.md)
 
-可独立运行的 Codex 桌面端任务与专注管理插件。自带本地 MCP 服务、完整 Web 应用和 SQLite 持久化存储，**不需要 Xinmo Desktop、心魔 Gateway、OpenClaw 或 NAS**。
+A local task and focus workspace for Codex. Organize tasks, projects, OKRs, and daily plans; track focus time and Codex chats; review AI deliveries before accepting them.
 
-当前版本：`0.1.7`。代码、可安装插件包和本地应用均已实现。Codex 内置浏览器路径已实际运行；MCP Apps 资源及 `global` / `thread` 入口元数据已实现，用户当前 Codex 客户端已确认原生侧边栏入口和全屏工作台可用，会话面板的宿主渲染尚未确认，详见 [宿主支持与验证记录](docs/host-support.md)。
+Todos runs its own local MCP service, web interface, and SQLite database. It does not require Xinmo Desktop, OpenClaw, a NAS, or a separate API key. Current release: **0.1.8**.
 
-界面采用紧凑顶部页签，没有网页左侧栏。嵌入 MCP Apps 时使用宿主提供的颜色、字体、圆角与明暗主题；浏览器里使用系统字体和中性黑白样式。顶部页签属于应用自身，原生 Codex 组件和侧栏入口仍需客户端支持，不能用页面样式替代。
+## Install in Codex
 
-界面使用 React，直接复用心魔的 Radix Select、Popover 和 DayPicker；四列看板、折叠卡片、任务详情、OKR 和专注布局从心魔组件适配。数据调用接到本项目服务，运行时不依赖心魔或 Tauri。对话框使用同一版本系列的 Radix Dialog，输入框和时间字段保留 HTML 控件。ext-apps SDK 提供宿主通信与主题接入，这些组件不属于 Codex 原生组件。详见 [组件复用范围](docs/ui-reuse.md)。
+### Requirements
 
-## 从 GitHub 安装到 Codex
+- A Codex CLI and desktop app with plugin support.
+- Git and **Node.js 24 or later**.
+- `node` and `codex` available on the PATH used to launch Codex.
 
-需要支持插件安装的 Codex CLI、Git，以及 **Node.js 24+**。请确保 Codex 启动环境的 PATH 能找到 `node` 和 `codex`。
+### Install from GitHub
 
-```bash
+```sh
 codex plugin marketplace add denvey/ai-todos
-codex plugin add ai-todos@ai-todos-local
+codex plugin add ai-todos@ai-todos
 ```
 
-仓库附带预构建插件，安装无需运行 npm 或编译。安装后开启新会话，输入“打开 ai-todos 工作台”；用 `/hooks` 审阅并信任插件 hooks，才能接收兼容模式的 AI 运行事件。历史会话同步无需 hooks。若客户端没有显示 MCP App，使用工具返回的本地浏览器地址。用户当前客户端已确认侧边栏入口可用。
+The repository includes a prebuilt plugin. You do not need npm or a build step to install it.
 
-发布包使用 Codex 原生 `.codex-plugin/plugin.json`。当前 Codex 会跳过通用 Agent Plugins 格式中的 hooks，因此包内不同时放根 `plugin.json`。若正在执行的会话仍显示未知，在终端运行 `codex`，通过 `/hooks` 检查 ai-todos 的 8 个事件是否已启用并信任，再重新打开需要跟踪的会话。工作台没有收到运行事件时会显示提示；历史同步不会覆盖已观察到的运行状态。
+Both the plugin and its marketplace are named `ai-todos`. Codex requires an explicit marketplace selector, so use `ai-todos@ai-todos` (or `ai-todos --marketplace ai-todos`).
 
-已添加同名本地 marketplace 的开发者应先按 `codex plugin marketplace --help` 管理现有来源，避免来源名称冲突。源码开发和本机打包方法见下文。
+### Open the workspace
 
-## 快速开始
+1. Start a new Codex chat after installation.
+2. Ask Codex: **“Open the ai-todos workspace.”** This invokes `ai_todos_open`.
+3. Use the plugin workspace if your client displays it. Otherwise, open the local `browserUrl` returned by the tool in the Codex browser or your regular browser.
+4. To observe live AI activity through hooks, run `codex` in a terminal and use `/hooks` to review and trust the ai-todos hooks. Installing the plugin does not automatically trust them. Historical chat synchronization works without hooks.
 
-需要 **Node.js 24+**（包含内置 SQLite）及 npm。任务、计时和人工审阅可离线运行；同步项目和 AI 完善需要支持 `project/list` 的 Codex CLI，AI 完善沿用 Codex 已有登录及模型配置，无需给本插件另外填写 API key。
+The native sidebar entry and full-screen workspace have been confirmed in the maintainer's current desktop client. Availability can vary by client version; the local browser workspace provides the fallback. The sidebar name currently uses the static Chinese label **任务**.
 
-在当前 ai-todos checkout 目录执行：
+### Update
 
-```bash
+```sh
+codex plugin marketplace upgrade ai-todos
+codex plugin add ai-todos@ai-todos
+```
+
+Start a new chat and reopen the workspace to load the update. Restart the desktop app if it still uses the old plugin, and review any changed hooks. A newer plugin client restarts an older local service while preserving stored tasks and focus records.
+
+If you already registered a local marketplace with this name, use `codex plugin marketplace --help` to manage the existing source before adding the GitHub source.
+
+## Use Todos
+
+### 1. Capture and plan
+
+- **Home:** type a task in the quick capture field. Press **Enter** to add it to today or **Option/Alt + Enter** to save it to the inbox.
+- **Inbox:** keep ideas until you are ready to turn them into tasks. AI suggestions can refine or split a draft; review the suggestions before applying them.
+- **Daily plans:** select existing tasks for a date and add notes. Removing a task from today's plan does not delete the task.
+
+### 2. Define a task
+
+Open **Tasks** and create or edit a task. Add a title, description, acceptance criteria, priority, project, schedule, and optional reminder or key result.
+
+Use AI refinement to improve the draft, preview the suggestion, and apply it. Changes are only persisted when you save. AI refinement uses your configured Codex model and sends the draft and selected project metadata; it does not read project files or start task execution.
+
+### 3. Work with Codex
+
+Use the task's Codex action to open its linked chat or create and link a new chat. New chats use the project directory when available and prefill the task title, description, and acceptance criteria. **Send the prompt in Codex to continue**; creating a chat does not start a model turn.
+
+The board groups work into **Not started**, **In progress**, **Needs your attention**, and **Done**, displaying task progress and observed AI activity separately. Historical chats with unknown activity appear in a collapsed section. Use Refresh to synchronize chats and projects.
+
+For managed task delivery, follow this flow:
+
+```text
+Define requirements → Ready → Link a trusted chat → Start execution
+                                                     ↓
+                                      Submit a summary and evidence
+                                                     ↓
+                                          Human review
+                                         ↙            ↘
+                               Request changes       Accept
+```
+
+AI stopping, becoming idle, or ending a chat does not accept a task. Review submitted work through the local review page; acceptance requires an explicit human confirmation. Tasks with execution history, linked chats, or focus records are cancelled rather than deleted.
+
+### 4. Track focus and progress
+
+- Start, pause, resume, or end focus from Home or a task card. Only one task can be timed at a time.
+- Focus records persist across page reloads and service restarts. **An active timer continues through sleep or closing Codex** until you pause or end it.
+- Use the timeline to view or adjust schedules, Projects to organize work, and OKRs to track objectives and key results.
+
+### 5. Choose your language and reminders
+
+In **Settings**, choose **Automatic**, **简体中文**, or **English**. Switching takes effect immediately and is saved in the current browser or embedded panel. Automatic mode uses the Codex host language first, then the browser language, with English as the fallback. User-written content stays in its original language.
+
+Configure task reminders, progress follow-up, daily review time, and time zone in Settings. Reminders are stored locally. Browser notifications require permission and an open page. The service does not wake AI or execute tasks in the background; scheduling pauses while the service is stopped or the machine is asleep.
+
+## Run from source
+
+For standalone use or development, install Node.js 24+ and npm, then run:
+
+```sh
+git clone https://github.com/denvey/ai-todos.git
+cd ai-todos
 npm ci
 npm run package:plugin
 npm run open
 ```
 
-`npm run open` 自动启动本地服务并打开 `http://127.0.0.1:16943`。也可以前台运行 `npm start`，或让 Codex 的内置浏览器打开该地址。
+`npm run open` starts the local service and opens `http://127.0.0.1:16943`. The first workspace is empty. You can also use `npm start` to run the service in the foreground.
 
-默认真实数据存储于 `~/.ai-todos/ai-todos.sqlite`。第一次打开是空工作台，无示例数据或模拟后端。服务只监听 `127.0.0.1`，不对局域网开放。
+To install your local build into Codex:
 
-## 从源码安装到 Codex
-
-先执行 `npm run package:plugin`，生成含运行时代码、UI、技能和 hooks 的 `plugins/ai-todos/`。包内已捆绑依赖，宿主启动时不运行 npm、不访问网络。构建时写入当前机器的 Node 绝对路径；换机器或升级 Node 路径后重新打包。
-
-```bash
+```sh
 codex plugin marketplace add /absolute/path/to/ai-todos
-codex plugin add ai-todos@ai-todos-local
+codex plugin add ai-todos@ai-todos
 ```
 
-当前机器已成功执行这两步。若 CLI 不支持安装子命令，在桌面端 Plugins 中选择 `ai-todos Local` 本地来源安装。部分客户端需要重启后才能发现本地 marketplace；请先保存正在进行的工作。
+Local builds use the build machine's absolute Node path. Rebuild after moving to another machine or changing that path. Publication builds use `npm run package:plugin -- --portable` and require Node.js 24+ on PATH.
 
-1. 安装后开启一个新会话，必要时重启桌面端。
-2. 用 `/hooks` 审阅并信任 ai-todos 的 hooks。安装插件不会自动信任 hooks；不信任时不会收到 hook 运行事件；官方接口已同步的会话仍可关联。
-3. 在新会话中输入“打开 ai-todos”，调用 `ai_todos_open`。
-4. 若出现 MCP App，可以使用其完整界面。若宿主不显示自定义入口或 UI，打开工具返回的 `browserUrl`，或让 Codex 使用内置浏览器打开它。
+### MCP-only connection
 
-`global` 与 `thread` 元数据使用官方协议声明。没有伪造已注册连接 ID，没有把普通 sidebar section 当作插件应用。当前实现的可靠入口是本地 Web 应用／Codex 内置浏览器。
+If you only need MCP tools, configure the source entry directly:
 
-### 仅连接 MCP（不安装插件）
-
-```bash
+```sh
 codex mcp add ai-todos -- /absolute/path/to/node /absolute/path/to/ai-todos/src/mcp.ts
 ```
 
-或 Settings → MCP servers → Add server → STDIO，填写同样的 command / args。开启新会话后调用工具。只添加 MCP 不会安装技能和 hooks；要使用可信 AI 会话观察，请安装完整插件。两种连接方式选一种，避免同名工具重复。
+This requires the source dependencies installed with `npm ci`. MCP-only setup does not install the plugin skills or hooks. Choose either the full plugin or the MCP-only connection to avoid duplicate tools.
 
-## 使用
+## Local data
 
-### 界面语言
+Tasks, plans, reminders, and focus records are stored in `~/.ai-todos/ai-todos.sqlite`. The service listens only on `127.0.0.1`.
 
-设置页支持「跟随系统」「简体中文」「English」，切换立即生效并在当前浏览器或嵌入面板的本地存储中保存。自动模式优先使用 Codex 宿主语言，其次使用浏览器语言；不支持的语言和缺失翻译回退到英文。界面、状态、提示、日历、日期、数字、时长、提醒和应用生成的执行指令均随语言切换；任务标题、说明、证据及其他用户内容保留原文。语言选择不改变提醒时区。
-
-使用 `i18next` 和 `react-i18next`；资源随应用打包，运行时无需下载。翻译使用稳定语义键和完整句子，英文数量文案支持单复数。新增语言时，在 `src/locales/` 添加资源文件，在 `src/i18n.ts` 注册名称和资源，并在 `ui/i18n.ts` 注册相应日历 locale；服务端输入校验同时接入对应 Zod locale。业务组件无需增加语言分支。Codex 插件侧栏名称由宿主静态配置决定。
-
-### 工作与排期
-
-- **首页**：展示专注统计、计时控制与今日任务，顶部主导航保留首页、任务、项目、OKR，设置在右侧。复用心魔今日任务与快捷输入栏。Enter 加入今天，⌥/Alt+Enter 存入收件箱；右侧悬停展开收件箱和完整任务入口，键盘与触屏均可用。AI 完善标题、说明与验收标准，可选择保留单项或一次拆成多项；失败保留输入，重试不重复创建。
-- **收件箱**：从首页今日任务区进入，独立保存原始想法，不进入任务、逾期和专注列表。支持搜索、待整理／已整理筛选、AI 整理预览、转为任务、加入今天、归档与恢复；转为任务后保留原始想法。AI 整理预览在当前页面会话内保留，刷新后需重新生成。
-- **安排今天**：从待办池勾选任务，全部加入／清空未完成，查看今日结束与历史验收任务，填写备注。取消勾选只移出今日。当天原有多个计划显示成员并集，保存保留各计划名称和其他内容；新增成员与今日备注进入按创建时间、ID 排序的首个计划。旧版本保存被拒绝，不覆盖其他页面的新安排。
-- **任务**：名称、说明、验收标准、优先级、项目、KR、提醒时间及计划起止时间。排期和提醒使用一体式日期时间选择器，在同一弹层选择日期和时间后点击“确定”；可清除或填入现在，Escape 取消本次选择。标题右侧“AI 完善”根据当前草稿完善标题、说明和验收标准；说明、验收标准右侧“AI 补齐／AI 再优化”只优化对应字段，并参考其他已填写内容。建议先预览，选择“应用优化”后填写到表单，点击保存才写入数据库。
-- **看板**：沿用心魔四列分组：未开始（定义中、已就绪、待修改）、进行中（执行中）、需要你处理（待验收）、已完成（已验收）。点击任务标题打开任务编辑弹窗，右侧箭头展开优先级、项目、排期和版本。具体业务状态与 AI 观察状态始终显示。完成任务超过五项时提供历史展开，取消任务另列。窄面板按两列排列，组内拖动不改变状态；不能拖拽制造交付或验收。
-- **Codex 会话同步**：打开工作台时直接读取官方 app-server 会话目录，页面打开期间每 30 秒同步，任务页“刷新”可立即同步。包含未归档主会话，排除子代理和临时草稿；使用会话 ID 去重，同步标题、预览、目录与更新时间。仅隐藏已被任务卡片实际覆盖的会话状态；已验收任务再次运行时仍展示新的会话活动，可按项目目录与文本筛选。卡片支持“打开原会话”；空闲或结束的会话显示“待确定”；未关联业务任务时，可由用户点击“确认完成”或拖到已完成列进行确认，后续运行或目录记录更新时自动清除旧确认。展开区只显示小号 Codex 图标、目录名、时间和确认记录，不展示整段会话预览。确认校验用户实际看到的观察版本，拒绝过期操作；关联业务任务仍走交付验收。活动会话每列先显示 50 个，点击“更多会话”继续加载。运行状态未知的会话放在默认折叠的“其他 Codex 会话”中，不计入未开始任务；展开后同样分批加载。看板列分别显示任务和会话数量。会话卡片不自动创建业务任务或验收记录。运行状态优先使用 `codex app-server proxy` 连接已有宿主；默认控制 socket 不可用时读取持久化目录，实时状态由可信 hooks 补充。`notLoaded` 显示未知，Stop／空闲进入需要你处理，不视为验收完成。历史同步不需要模型调用，也不会继续执行会话；本机历史会话预览只保存于本地数据库。
-- **心魔状态迁移**：完整保留 6 个交付阶段和 9 个 AI 运行状态的展示与归类规则；定义中的关联任务按规划模式显示“正在规划”，有实际轮次的规划结束后进入“需要你处理”，等待确定要求；仅创建或关闭空会话时仍留在“未开始”。就绪及后续阶段按执行模式显示。模式从当前任务阶段计算，不写入会话数据。已提交交付显示“待我验收”，尚未人工确定的 AI 结果显示“待确定”。已关联任务的等待、失败、本轮结束和状态未确认参与看板归类，中断后回到可以开始。首页、看板与详情共用状态文案；已完成任务和会话合并显示最近 5 项。具体字段适配与宿主能力见 [状态迁移对照](docs/xinmo-status-port.md)。
-- **打开 Codex**：卡片与详情页使用同一入口，有关联时复用原会话；未关联的定义中、已就绪、待修改任务由本地服务通过官方 `thread/start` 创建持久会话，使用项目目录，没有轮次的会话会在 Codex 输入框预填任务标题、内容和验收标准，使用普通文本，省略未填写的内容和验收标准，等待用户发送；已有轮次时续聊，不预填。任务数据同时写入后台历史以持久化会话；关联信息由可信 hook 在后台提供，不附带长流程提示或任务 JSON。服务核对返回的会话数据，通过现有 bind 规则关联原任务后，由操作系统打开 Codex 深链接，MCP 面板与独立浏览器使用同一流程。无项目目录时使用本地数据目录下的任务工作目录。并发点击共用创建请求；版本变化导致关联失败时归档新会话。创建不启动模型轮次或业务执行，用户在 Codex 中继续。活跃任务的关联会话只显示在任务卡片上，退回修改后的任务也跟随 AI 运行状态；已验收任务的新会话活动仍单独显示。详情有未保存更改时，先保存再新建；打开已有会话不要求保存表单。需要 Codex CLI 与桌面应用，系统无法打开深链接时显示错误并保留关联，重试打开不会重复创建。
-- **时间线／甘特图**：与看板共用任务、项目、状态；日／周／月缩放、横向浏览、项目筛选、搜索、拖动移动、两端调整时间。键盘 ← / → 移动一天，Shift + ← / → 调整结束时间；任务详情提供精确日期输入。未排期任务单独展示。
-- **项目**：打开应用时同步 Codex 的注册项目，也可在项目页或任务编辑器点击“同步 Codex 项目”。保留项目来源 ID 和工作目录，同一项目的多个目录分别展示，重复同步不会重复创建。名称由 Codex 维护，本地说明和任务关联保留；同步只新增和更新，不自动删除 Codex 中已移除的项目。本地自建项目继续可用。
-- **OKR**：目标与 KR，起始值、当前值、目标值和可选计量单位（如个、次、%、元）；支持增加或减少目标，任务可关联 KR。添加 KR 与编辑目标位于目标标题右侧。
-- **每日计划**：从首页操作区进入，按日期选择已有任务、备注，可查看和编辑不同日期的清单；当天安排显示在首页，直接投影任务状态，不复制任务。
-- **删除**：存在引用时拒绝删除。已执行、已关联会话或有计时记录的任务保留审计，使用取消操作。
-
-### AI 执行与人工验收
-
-AI 完善使用临时 Codex 会话，只接收草稿和所选项目的名称、说明与目录，不读取项目文件。调用关闭执行、浏览器、插件、hooks 和外部 MCP 工具，使用只读权限与结构化输出；建议不会启动业务任务、绑定会话或改变状态。生成最长等待两分钟，失败时保留输入。草稿发送给 Codex 当前配置的模型服务。
-
-```text
-定义需求与验收标准 → 就绪 → 绑定可信会话 → 开始执行
-                                          ↓
-                            真实交付 + 摘要 + 证据
-                                          ↓
-                                       待验收
-                                 ↙                 ↘
-                          人工退回修改          人工验收通过
-                               ↓
-                         继续执行并重新提交
-```
-
-- 会话 ID 来自 Codex 官方 `thread/list` 或可信 hook 的 `session_id`；绑定前必须已经同步或观察到。一个未取消任务关联一个主会话，一个主会话不重复绑定其他任务。
-- “开始执行”记录业务意图，不会凭空启动 Codex。任务详情可生成执行指令；浏览器中复制到原会话，支持 `ui/message` 的 MCP App 中可由用户点击发送到当前对话。指令要求核对可信 sessionId；插件不猜测当前宿主会话 ID、不自动创建或路由到其他对话。
-- AI 徽标单独显示 hook 观察到的运行、等待许可、本轮结束、中断、会话结束。运行／等待事件超过 5 分钟未刷新时显示未知，保留最后事件时间；这不是持续遥测。
-- **Stop / Interrupt / SessionEnd 只更新观察状态，不提交交付、不验收、不改变任务业务状态。**
-- `submit` 必须有摘要和至少一条真实证据。证据为 HTTP(S) URL 或本地绝对路径；服务不读取、执行、验证证据文件，不允许带账号密码的 URL。
-- **人工验收和退回通过本地审阅页进行，MCP 不暴露验收工具。** 审阅页显示验收标准、交付证据和实际版本；需填写审阅人并勾选明确确认。退回必须填写原因。MCP App 的审阅按钮打开同一任务的本地页面。
-- 编辑、排期、推进、提交、绑定、计时和配置均校验实际读取的 `revision`。审阅使用短时、一次性 ticket 绑定人实际看到的版本；任务变化后拒绝旧确认，不自动提升到最新版。
-- 审阅人名称是本地用户填写的审计标签，不是经过身份提供方认证的身份。任何有本机执行权限的进程仍属于信任边界；此版本不提供多用户、租户或远程权限模型。
-
-### 首页专注统计与提醒设置
-
-- 每次只计时一个任务；支持开始、暂停、恢复、结束并记录。
-- 计时状态立即写入 SQLite，按时间戳恢复；面板关闭、重开或服务重启不丢记录。暂停区间不计入投入；结束后保留区间、时长和任务记录。
-- 首页展示选定日期投入、累计投入与记录数；明细可展开按日期、任务和项目查看，跨午夜区间分配到对应日期。统计使用浏览器本地时区，提醒时区可独立配置。
-- **运行中的计时是墙钟时间**：关闭 Codex、服务退出、设备休眠期间仍累计，直到显式暂停或结束。需要避免离开时间被计入时，先暂停。
-- 在右侧设置页配置任务提醒、执行中任务跟进间隔、每日复盘时间和时区；提醒保存在提醒记录，支持标记已读。
-- 本地服务每 15 秒检查到期提醒。MCP 启动的服务独立于会话、退出 Codex 后通常继续运行；`npm run stop` 明确停止。系统重启、关机、休眠或服务被终止期间不调度；再次启动时补发当前到期提醒，每个提醒／跟进时段去重，不补发停机期间每一个历史跟进时段。
-- 系统浏览器通知需要用户授予权限且页面打开；页面关闭时提醒只保存在提醒记录。MCP 面板不保证系统通知。此版本不会唤醒 Codex、主动发消息、后台执行 AI 或安装开机常驻服务。
-
-## 配置与数据
-
-| 环境变量 | 默认值 | 用途 |
+| Environment variable | Default | Purpose |
 | --- | --- | --- |
-| `AI_TODOS_DATA_DIR` | `~/.ai-todos` | 服务、MCP 和 hooks 共用的数据目录 |
-| `AI_TODOS_PORT` | `16943` | 回环 HTTP 端口，允许 1024–65535 |
+| `AI_TODOS_DATA_DIR` | `~/.ai-todos` | Shared data directory for the service, MCP, and hooks |
+| `AI_TODOS_PORT` | `16943` | Local HTTP port; allowed range: 1024–65535 |
 
-修改环境变量时，必须让服务、插件 MCP 与 hooks 使用相同值。默认配置无需填写。不要把不同数据目录的服务放在同一个端口；若端口被占用，启动会报告错误而不会连接无凭据的其他服务。
+Use the same values for all plugin processes. Keep runtime credentials and logs out of Git.
 
-`runtime.json` 包含仅供本地进程通信的随机凭据，以 `0600` 保存，不进入前端、工具结果或仓库。前端使用 HttpOnly / SameSite cookie、请求源校验和 CSRF token；仅审阅页可调用人工决定端点。SQLite 使用 WAL、事务和 revision 校验，hooks 与服务可安全并发写入。提醒和历史存储在同一数据库。
+To stop the service and back up data from a source checkout:
 
-```bash
+```sh
 npm run stop
-# 关闭 Codex 或确保 hooks 暂停写入后备份：
+# Close Codex or ensure hooks have stopped writing before copying:
 cp ~/.ai-todos/ai-todos.sqlite /your/backup/ai-todos.sqlite
 ```
 
-只备份业务数据库，不要把运行凭据或日志提交到仓库。恢复时先停止服务，再替换数据库。卸载插件不会删除 `~/.ai-todos`，也不会停止独立本地服务；需要时先运行 `npm run stop`。
+Stop the service before restoring the database. Uninstalling the plugin does not delete the data directory or stop the independent service. This is a local, single-user application.
 
-## 发布与开发
+## Troubleshooting
 
-发布仓库中的预构建插件使用 `npm run package:plugin -- --portable`，以 PATH 中的 `node` 启动。修改源码后应重新生成并提交 `plugins/ai-todos/`。
+| Problem | What to check |
+| --- | --- |
+| Plugin commands are unavailable | Confirm your Codex version supports plugins and start a new chat after installation. |
+| `node` or `codex` cannot be found | Check the PATH inherited by Codex; Node.js must be version 24 or later. |
+| The workspace is not displayed inside Codex | Open the `browserUrl` returned by `ai_todos_open`. |
+| AI activity is unknown | Review and trust all eight ai-todos events with `/hooks`; reopen the chat you want to track. Historical chats may legitimately have unknown activity. |
+| An update still shows the old interface | Refresh the marketplace, reinstall the plugin, start a new chat, and reopen the workspace. Restart Codex if needed. |
+| The local port is occupied | Stop the conflicting service or choose another `AI_TODOS_PORT` consistently across the service, MCP, and hooks. |
 
-### 开发与检查
+## Development
 
-```bash
-npm ci
+```sh
 npm run typecheck
 npm run build
-npm start
-npm run package:plugin
 npm run check
+npm run package:plugin -- --portable
 ```
 
-`npm run typecheck` 严格检查全部 TypeScript 应用源码（服务、MCP、UI、hooks 与脚本）。源码使用 `.ts` / `.tsx`，Node.js 24+ 直接运行服务与脚本，esbuild 将 UI 和安装包编译为 JavaScript；插件安装无需 TypeScript 编译器。现有测试保留 JavaScript，直接导入 TypeScript 源码。
+The tests use temporary data directories. Source code is TypeScript; the installable plugin bundles JavaScript and its dependencies.
 
-`npm run check` 在临时数据库中覆盖 CRUD／关系、幂等创建、revision 冲突、交付与人工审阅、可信会话、Stop、计时重启恢复、提醒去重、真实 STDIO 工具与 UI 资源、HTTP 边界及打包后的入口。不会修改日常数据。
+Internationalization uses `i18next` and `react-i18next` with bundled resources. To add a language, add a resource file under `src/locales/`, register it in `src/i18n.ts`, register the calendar locale in `ui/i18n.ts`, and include the corresponding Zod validation locale.
 
-修改服务或 UI 后重新构建并刷新页面；新版客户端连接时会通过已认证端点停止较旧的后台服务并启动当前版本，数据与计时保留，不降级较新的服务。更新已安装插件后重新打包并刷新本地 marketplace，再开启新会话／重启客户端以加载新版客户端和界面；重新审阅变化后的 hooks，不绕过信任检查。
-
-```text
-src/domain.ts           唯一业务规则、SQLite 事务、计时、监督调度
-src/server.ts           回环 Web 服务与人工审阅端点
-src/mcp.ts              STDIO MCP 工具、MCP Apps 资源和入口
-src/service-client.ts   自动启动／连接独立本地服务
-src/types.ts            从 Zod 推导的共享数据类型
-src/codex.ts            Codex 项目同步与临时任务定义生成
-hooks/observe.ts        可信宿主事件投影（不读取对话内容）
-ui/                    完整工作台，同一界面支持 MCP Apps 与浏览器
-scripts/               构建、打包、打开与停止
-skills/ai-todos/        AI 工作流约束
-.agents/plugins/       本地 marketplace
-```
-
-宿主协议证据、已完成检查和未验证项见 [docs/host-support.md](docs/host-support.md)。此前复用心魔 Gateway 的调研方案已被独立本地架构替代。ClawMate 仅按需只读参考，未修改或复制其原生桌面实现。
+See the [Chinese user guide](README.zh-CN.md), [host support and verification records](docs/host-support.md), [UI component reuse](docs/ui-reuse.md), and [task/AI state mapping](docs/xinmo-status-port.md) for implementation details. These supporting documents are currently in Chinese.
