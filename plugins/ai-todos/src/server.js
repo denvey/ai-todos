@@ -27672,6 +27672,51 @@ async function codexAction(store2, raw) {
   return refine2(input2.draft, project, outputSchema, capture, "field" in input2 ? input2.field : void 0);
 }
 
+// package.json
+var package_default = {
+  name: "ai-todos",
+  version: "0.1.11",
+  private: true,
+  type: "module",
+  description: "Standalone local Codex productivity plugin",
+  engines: {
+    node: ">=24.0.0"
+  },
+  scripts: {
+    build: "node scripts/build.ts",
+    start: "node src/server.ts",
+    open: "node scripts/open.ts",
+    stop: "node scripts/stop.ts",
+    mcp: "node src/mcp.ts",
+    check: "node --test test/*.test.js",
+    "package:plugin": "node scripts/package-plugin.ts",
+    typecheck: "tsc --noEmit"
+  },
+  dependencies: {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "@radix-ui/react-dialog": "1.1.19",
+    "@radix-ui/react-popover": "1.1.19",
+    "@radix-ui/react-select": "2.3.3",
+    i18next: "26.4.3",
+    "lucide-react": "0.525.0",
+    react: "19.1.1",
+    "react-day-picker": "9.14.0",
+    "react-dom": "19.1.1",
+    "react-i18next": "17.0.16",
+    ws: "8.22.0",
+    zod: "4.6.5"
+  },
+  devDependencies: {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
+    esbuild: "0.28.2",
+    typescript: "7.0.2"
+  }
+};
+
 // src/server.ts
 var store = new Store(dbPath);
 chmodSync(dbPath, 384);
@@ -27714,7 +27759,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, errorPayload(new DomainError("errors.loopbackOnly")));
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.10" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: package_default.version });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, errorPayload(new DomainError("errors.unauthorized")));
       if (path === "/internal/ping") return send(res, 200, { ok: true });

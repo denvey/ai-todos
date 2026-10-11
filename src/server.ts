@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'n
 import { Store, DomainError, errorPayload } from './domain.ts';
 import { codexAction } from './codex.ts';
 import { dbPath, dataDir, runtimePath, port, origin } from './paths.ts';
+import pkg from '../package.json' with { type: 'json' };
 
 const store = new Store(dbPath);
 chmodSync(dbPath, 0o600);
@@ -35,7 +36,7 @@ const server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, errorPayload(new DomainError('errors.loopbackOnly')));
     const path = new URL(req.url!, origin).pathname;
-    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.10' });
+    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: pkg.version });
     if (path.startsWith('/internal/')) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, errorPayload(new DomainError('errors.unauthorized')));
       if (path === '/internal/ping') return send(res, 200, { ok: true });
