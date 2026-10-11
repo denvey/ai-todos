@@ -34,7 +34,7 @@ export interface Notice { id: string; key: string; title: string; taskId: string
 export interface TaskEvent { id: string; at: string; type: string; revision?: number; state?: TaskState; sessionId?: string | null; delivery?: Delivery; decision?: Review['decision']; reviewer?: string; note?: string; reviewedRevision?: number; durationMs?: number }
 export interface Snapshot { tasks: Task[]; projects: Project[]; objectives: Objective[]; keyResults: KeyResult[]; plans: Plan[]; inbox: InboxItem[]; sessions: LiveSession[]; focus: Focus & { totalMs: number }; settings: Settings; notices: Notice[]; timeRecords: TimeRecord[]; serverTime: string; csrf?: string }
 export interface CodexProject { projectId: string; workspacePath: string; title: string }
-export interface CodexThread { id: string; title: string; preview?: string; cwd: string; projectId?: string | null; updatedAt: string; state: string }
+export interface CodexThread { id: string; title: string; preview?: string; cwd: string; projectId?: string | null; updatedAt: string; state: string; observation?: Pick<Session, 'observedAt' | 'event' | 'source' | 'turnId'> }
 export interface ServiceRuntime { pid: number; origin: string; token: string }
 export type CommandInput = z.input<typeof commandSchema>;
 export type TransitionState = Extract<Command, { action: 'transition' }>['state'];

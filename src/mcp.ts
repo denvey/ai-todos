@@ -11,7 +11,7 @@ import { ensureService, service } from './service-client.ts';
 import { origin } from './paths.ts';
 await ensureService();
 const icons = [{ src: `data:image/png;base64,${readFileSync(new URL('../assets/icon.png', import.meta.url)).toString('base64')}`, mimeType: 'image/png' }];
-const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.8', icons });
+const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.9', icons });
 const uri = 'ui://ai-todos/app.html';
 const result = (value: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
 const guarded = <T,>(fn: (args: T) => Promise<Record<string, unknown>>) => async (args: T): Promise<CallToolResult> => { try { return result(await fn(args)); } catch (error) { const payload = errorPayload(error); return { isError: true, content: [{ type: 'text', text: String(payload.error) }], structuredContent: payload }; } };

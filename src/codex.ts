@@ -1,8 +1,12 @@
 import { execFile, spawn } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, normalize } from 'node:path';
+import { Duplex } from 'node:stream';
+import WebSocket from 'ws';
 import { z } from 'zod';
 import { DomainError, schemas } from './domain.ts';
 import { codexRuntimeState } from './runtime.ts';
@@ -19,7 +23,7 @@ const definitionSuggestionSchema = schemas.task.pick({ title: true, description:
 const captureSuggestionSchema = definitionSuggestionSchema.extend({ suggestedSteps: z.array(definitionSuggestionSchema).max(20), reason: z.string().max(1000) }).strict();
 const pageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: schemas.project.shape.title, roots: z.array(z.object({ path: z.string().min(1).max(2000).refine(isAbsolute, "errors.projectPath") })) })), nextCursor: z.string().nullable() });
 const mcpPageSchema = z.object({ data: z.array(z.object({ name: z.string().min(1) })), nextCursor: z.string().nullable() });
-const threadPageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: z.string().nullable().optional(), preview: z.string(), cwd: z.string().min(1).max(2000).refine(isAbsolute, "errors.sessionPath"), projectId: z.string().uuid().nullable().optional(), parentThreadId: z.string().nullable().optional(), ephemeral: z.boolean(), updatedAt: z.number().int().nonnegative(), status: z.object({ type: z.string(), activeFlags: z.array(z.string()).optional() }) })), nextCursor: z.string().nullable() });
+const threadPageSchema = z.object({ data: z.array(z.object({ id: z.string().uuid(), name: z.string().nullable().optional(), preview: z.string(), cwd: z.string().min(1).max(2000).refine(isAbsolute, "errors.sessionPath"), path: z.string().min(1).max(2000).refine(isAbsolute, "errors.sessionPath").nullable().optional(), projectId: z.string().uuid().nullable().optional(), parentThreadId: z.string().nullable().optional(), ephemeral: z.boolean(), updatedAt: z.number().int().nonnegative(), status: z.object({ type: z.string(), activeFlags: z.array(z.string()).optional() }) })), nextCursor: z.string().nullable() });
 const localeSchema = z.enum(Object.keys(languages) as [Locale, ...Locale[]]).optional();
 export const codexActionSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('prepare_task_session'), id: z.string().uuid(), revision: z.number().int().positive(), locale: localeSchema }).strict(),
@@ -44,7 +48,9 @@ async function withCodex<T>(action: (connection: CodexConnection) => T | Promise
   let onNotification: (message: Notification) => void = () => {};
   let fail!: (error: unknown) => void;
   const failure = new Promise<never>((_, reject) => { fail = reject; });
-  const send = (message: Record<string, unknown>) => child.stdin.write(`${JSON.stringify(message)}\n`);
+  // The proxy carries raw Unix socket bytes; the shared host requires a WebSocket handshake.
+  const socket = shared ? new WebSocket('ws://localhost', { createConnection: () => Duplex.from({ writable: child.stdin, readable: child.stdout }), maxPayload: 2000000, handshakeTimeout: timeout }) : null;
+  const send = (message: Record<string, unknown>) => socket ? socket.send(JSON.stringify(message)) : child.stdin.write(`${JSON.stringify(message)}\n`);
   const request: CodexConnection["request"] = (method, params) => new Promise<Record<string, unknown>>((resolve, reject) => {
     const id = ++sequence; pending.set(id, { resolve, reject }); send({ id, method, params });
   });
@@ -52,35 +58,45 @@ async function withCodex<T>(action: (connection: CodexConnection) => T | Promise
   child.on('error', error => fail(new DomainError('code' in error && error.code === 'ENOENT' ? "errors.codexMissing" : "errors.codexStart", 503)));
   child.stdin.on('error', () => fail(new DomainError("errors.codexClosed", shared ? 503 : 502)));
   child.on('exit', () => fail(new DomainError(shared ? "errors.codexHost" : "errors.codexExit", shared ? 503 : 502)));
-  child.stdout.setEncoding('utf8');
-  child.stdout.on('data', chunk => {
-    buffer += chunk;
-    if (buffer.length > 2000000) { fail(new DomainError("errors.codexLarge", 502)); return; }
-    let end;
-    while ((end = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
-      if (!line.trim()) continue;
-      try {
-        const message = JSON.parse(line);
-        if (message.method && message.id !== undefined) {
-          send({ id: message.id, error: { code: -32601, message: 'Task definition generation does not allow tools or approvals.' } });
-          fail(new DomainError("errors.codexTools", 502));
-        } else if (message.id !== undefined) {
-          const waiter = pending.get(message.id); pending.delete(message.id);
-          if (message.error) waiter?.reject(new DomainError('errors.codexRequest', 502, { message: message.error.message }));
-          else waiter?.resolve(message.result);
-        } else onNotification(message);
-      } catch (error) { fail(error); }
-    }
-  });
+  const receive = (line: string) => {
+    if (!line.trim()) return;
+    try {
+      const message = JSON.parse(line);
+      if (message.method && message.id !== undefined) {
+        send({ id: message.id, error: { code: -32601, message: 'Task definition generation does not allow tools or approvals.' } });
+        fail(new DomainError("errors.codexTools", 502));
+      } else if (message.id !== undefined) {
+        const waiter = pending.get(message.id); pending.delete(message.id);
+        if (message.error) waiter?.reject(new DomainError('errors.codexRequest', 502, { message: message.error.message }));
+        else waiter?.resolve(message.result);
+      } else onNotification(message);
+    } catch (error) { fail(error); }
+  };
+  if (socket) {
+    socket.on('message', data => receive(data.toString()));
+    socket.on('error', () => fail(new DomainError("errors.codexHost", 503)));
+    socket.on('close', () => fail(new DomainError("errors.codexHost", 503)));
+  } else {
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      buffer += chunk;
+      if (buffer.length > 2000000) { fail(new DomainError("errors.codexLarge", 502)); return; }
+      let end;
+      while ((end = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, end); buffer = buffer.slice(end + 1);
+        receive(line);
+      }
+    });
+  }
   try {
     return await Promise.race([failure, (async () => {
-      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.8' }, capabilities: { experimentalApi: true } });
+      if (socket) await new Promise<void>(resolve => socket.once('open', resolve));
+      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.9' }, capabilities: { experimentalApi: true } });
       send({ method: 'initialized' });
       return action({ cwd, request, notifications: listener => { onNotification = listener; } });
     })()]);
   } finally {
-    clearTimeout(timer); child.stdin.end();
+    clearTimeout(timer); socket?.terminate(); child.stdin.end();
     if (child.exitCode === null && child.signalCode === null) {
       await new Promise<void>(resolve => {
         const force = setTimeout(() => child.kill('SIGKILL'), 1000);
@@ -163,6 +179,31 @@ async function listProjects() {
   }, 15000);
 }
 
+async function rolloutObservation(thread: z.output<typeof threadPageSchema>["data"][number]) {
+  if (thread.status.type !== 'notLoaded' || !thread.path || Date.now() - thread.updatedAt * 1000 > 300000) return;
+  const input = createReadStream(thread.path), lines = createInterface({ input, crlfDelay: Infinity });
+  let matched = false, latestAt = '', observation: { state: string; observedAt: string; event: string; source: string; turnId: string | null } | undefined;
+  try {
+    for await (const line of lines) {
+      try {
+        const timestamp = line.match(/^\{"timestamp"\s*:\s*"([^"]+)"/)?.[1];
+        if (!timestamp || !Number.isFinite(Date.parse(timestamp))) continue;
+        if (!latestAt || Date.parse(timestamp) > Date.parse(latestAt)) latestAt = timestamp;
+        // Read lifecycle records only; conversation text is not imported.
+        if (!/"type"\s*:\s*"(session_meta|task_started|task_complete|turn_aborted)"/.test(line)) continue;
+        const record = JSON.parse(line);
+        if (record.type === 'session_meta') { if (record.payload?.id !== thread.id) return; matched = true; }
+        if (record.type !== 'event_msg') continue;
+        const state = ({ task_started: 'running', task_complete: 'idle', turn_aborted: 'interrupted' } as Record<string, string>)[record.payload?.type];
+        if (!state || (record.payload.type !== 'task_started' && observation?.turnId && record.payload.turn_id && record.payload.turn_id !== observation.turnId)) continue;
+        observation = { state, observedAt: timestamp, event: record.payload.type, source: 'codex-rollout', turnId: record.payload.turn_id ?? null };
+      } catch { /* A concurrently appended final line may be incomplete. */ }
+    }
+    if (matched && observation) return { ...observation, observedAt: observation.state === 'running' ? latestAt : observation.observedAt };
+  } catch { /* Unreadable history retains the API's unknown state. */ }
+  finally { lines.close(); input.destroy(); }
+}
+
 async function listThreads() {
   const read = async ({ request }: CodexConnection) => {
     const threads: CodexThread[] = [], cursors = new Set<string | null>(); let cursor: string | null = null;
@@ -173,8 +214,9 @@ async function listThreads() {
         const requestIndex = thread.preview.startsWith('# Files mentioned by the user:') ? thread.preview.indexOf('## My request:') : -1;
         const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + '## My request:'.length) : thread.preview).trim();
         const title = (thread.name?.trim() || preview.replace(/\s+/g, ' ') || `Codex · ${basename(thread.cwd)} · ${thread.id.slice(-8)}`).slice(0, 300);
-        const state = codexRuntimeState(thread.status);
-        threads.push({ id: thread.id, title, preview: preview.slice(0, 20000), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1000).toISOString(), state });
+        const observation = await rolloutObservation(thread);
+        const state = observation?.state ?? codexRuntimeState(thread.status);
+        threads.push({ id: thread.id, title, preview: preview.slice(0, 20000), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1000).toISOString(), state, ...(observation ? { observation } : {}) });
       }
       cursor = page.nextCursor;
       if (cursor && cursors.has(cursor)) throw new DomainError("errors.sessionPagination", 502);
@@ -186,7 +228,7 @@ async function listThreads() {
   catch (error) {
     if (!(error instanceof DomainError) || ![503, 504].includes(error.status)) throw error;
     // shortcut: clients without a shared control socket use stored history; hooks supply live state.
-    return { threads: (await withCodex(read, 30000)).map(thread => ({ ...thread, state: 'unknown' })), transport: 'history' };
+    return { threads: (await withCodex(read, 30000)).map(thread => ({ ...thread, state: thread.observation ? thread.state : 'unknown' })), transport: 'history' };
   }
 }
 

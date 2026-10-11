@@ -31,6 +31,8 @@
 
 官方接口分别识别 `waitingOnApproval`、`waitingOnUserInput`，`systemError` 显示执行失败。已有本地 `waiting`、`ended` 记录分别按 `waiting_approval`、`completed` 读取，无需改写历史数据。可信 PermissionRequest 记录等待审批；Stop 记录 idle；SessionEnd 记录 completed。
 
+共享宿主接口通过 WebSocket 握手连接。桌面会话在独立 daemon 中返回 notLoaded 时，仅对最近五分钟更新的会话读取官方日志的生命周期元信息，并核对 session ID；task_started、task_complete、turn_aborted 分别补齐 running、idle、interrupted。观察沿用日志实际活动时间，不靠目录轮询延长历史运行状态；更新的 hooks 和同轮等待审批／输入优先保留。日志缺失或无法读取时继续保持未知。
+
 规划标签仅用于真实 `mode=planning`，不会从任务标题或停止事件猜测。心魔的 hooks 同样不提供规划模式；规划／排队信息原本由其 Codex 控制器提供。当前本地插件保留所有这些状态的展示与归类规则，收到对应状态才显示。
 
 ## 迁移的交互

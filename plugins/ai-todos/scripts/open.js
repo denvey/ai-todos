@@ -22,7 +22,7 @@ var origin = `http://127.0.0.1:${port}`;
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.8",
+  version: "0.1.9",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
@@ -51,12 +51,14 @@ var package_default = {
     "react-day-picker": "9.14.0",
     "react-dom": "19.1.1",
     "react-i18next": "17.0.16",
+    ws: "8.22.0",
     zod: "4.6.5"
   },
   devDependencies: {
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.2",
     esbuild: "0.28.2",
     typescript: "7.0.2"
   }

@@ -23300,9 +23300,11 @@ var Store = class {
         const previous = existing.get(thread.id);
         const session = { ...previous, id: thread.id, title: thread.title, preview: thread.preview, cwd: thread.cwd, codexProjectId: thread.projectId, catalogUpdatedAt: thread.updatedAt, catalogVisible: true };
         if (previous?.catalogUpdatedAt && Date.parse(thread.updatedAt) > Date.parse(previous.catalogUpdatedAt)) delete session.confirmedAt;
-        if (thread.state !== "unknown" || !previous) {
-          if (thread.state !== previous?.observedState || thread.updatedAt !== previous?.catalogUpdatedAt) Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server" });
-          if (!["idle", "completed"].includes(runtimeState(thread.state))) delete session.confirmedAt;
+        const observation = thread.observation;
+        const retainHook = observation && previous?.source === "codex-hook" && (Date.parse(previous.observedAt) > Date.parse(observation.observedAt) || thread.state === "running" && ["waiting_approval", "waiting_input"].includes(runtimeState(previous.observedState)) && previous.turnId === observation.turnId);
+        if (!retainHook && (thread.state !== "unknown" || !previous)) {
+          Object.assign(session, { observedState: thread.state, observedAt: this.at(), event: "thread/list", source: "codex-app-server", ...observation });
+          if (!["idle", "completed"].includes(runtimeState(thread.state)) || observation && observation.turnId !== previous?.turnId) delete session.confirmedAt;
         }
         if (JSON.stringify(session) === JSON.stringify(previous)) continue;
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));

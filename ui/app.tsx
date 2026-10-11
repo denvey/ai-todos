@@ -23,7 +23,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.6' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.9' }, {}, { autoResize: true }) : null;
 const mainPages = { today: 'nav.today', work: 'nav.work', projects: 'nav.projects', okr: 'nav.okr' } as const;
 const pages: Record<string, TranslationKey> = { ...mainPages, inbox: 'nav.inbox', plans: 'nav.plans', settings: 'nav.settings' };
 const singular: Record<string, TranslationKey> = { task: 'entity.task', project: 'entity.project', objective: 'entity.objective', keyResult: 'entity.keyResult', plan: 'entity.plan' };

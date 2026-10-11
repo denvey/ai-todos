@@ -60,7 +60,9 @@
 
 用户于 2026-10-10 提供截图，确认已安装 ai-todos 的原生侧边栏入口及全屏工作台实际可用。该证据适用于用户当前客户端，不代表所有客户端版本。插件 interface 已补充 composerIcon 和 logo，图标为透明背景的任务勾选框。
 
-Codex 会话同步迁移：参考心魔 execution-board.ts 和 AiSessionCard，将未关联业务任务的会话作为独立卡片显示，业务状态不被运行状态覆盖。使用官方 app-server thread/list 完整分页、排除子代理及临时会话，按 ID 更新；任务关联认可官方同步 ID。当前默认宿主 control socket 不存在，proxy 连接失败，已使用隔离 STDIO app-server 成功同步 2,198 个未归档主会话，均为 notLoaded / 未知，未伪造运行或完成状态。同步不读取完整对话或触发 turn/start。每列分批渲染 50 个；自动刷新与手动同步共享当前页面请求。实际宿主代理在线路径和原会话深链接跳转仍待客户端验证。
+Codex 会话同步迁移：参考心魔 execution-board.ts 和 AiSessionCard，将未关联业务任务的会话作为独立卡片显示，业务状态不被运行状态覆盖。使用官方 app-server thread/list 完整分页、排除子代理及临时会话，按 ID 更新；任务关联认可官方同步 ID。迁移初期默认宿主 control socket 不存在，proxy 连接失败，使用隔离 STDIO app-server 成功同步 2,198 个未归档主会话，均为 notLoaded / 未知，未伪造运行或完成状态。同步不读取完整对话或触发 turn/start。每列分批渲染 50 个；自动刷新与手动同步共享当前页面请求。该阶段尚未验证宿主代理在线路径和原会话深链接跳转。
+
+2026-10-11 运行状态同步修复：共享 control socket 使用 WebSocket，proxy 仅转发原始字节；补齐握手后成功从宿主目录同步 2,245 个主会话。本机桌面会话未加载在独立 daemon 中，因此对最近五分钟更新的 notLoaded 会话，读取官方返回日志路径中的 session_meta、task_started、task_complete、turn_aborted 和活动时间，核对 session ID 后补齐观察；不导入对话内容。历史观察使用实际活动时间，可信 hooks 的更新和同轮审批状态不会被覆盖，新一轮清除旧确认。初次只读核对截图中的两个会话均返回 running；更新本机插件后端并重启服务后，“修复 ABAC 店铺负责人条件查询并完成浏览器验收”返回 running / 进行中，“确认当前分支提交范围”返回 idle / 需要你处理，全部业务任务字段与更新前一致。7 项定向检查和 TypeScript 检查通过；未运行完整业务套件。
 
 会话同步实际界面记录：本地工作台任务页显示 0 项业务任务 / 2,198 个 Codex 会话；搜索 ai-todos 后显示 1 个匹配会话。第二次官方同步新增 0、更新 5，业务任务数量不变。已完成构建，未重跑完整业务套件。
 
