@@ -39,7 +39,7 @@ function api(path: 'codex', data: { operation: 'capture_refine'; draft: TaskDraf
 function api(path: string, data: unknown): Promise<unknown>;
 async function api(path: string, data?: unknown): Promise<unknown> {
   if (embedded) {
-    const names: Record<string, string> = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex', 'session-confirm': 'ai_todos_confirm_session' };
+    const names: Record<string, string> = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex', 'session-confirm': 'ai_todos_confirm_session', 'task-complete': 'ai_todos_complete_task' };
     if (!names[path]) throw new Error(i18n.t("connection.localReview"));
     const result = await bridge!.callServerTool({ name: names[path], arguments: (path === 'command' ? { command: data } : path === 'codex' ? { action: data } : (data ?? {})) as Record<string, unknown> });
     if (result.isError) throw new Error(localizedError(result.structuredContent ?? { error: result.content?.find(item => item.type === 'text')?.text }));
@@ -224,6 +224,10 @@ function Workspace() {
     return focus.taskId === task.id && focus.status !== 'idle' ? focusOp(focus.status === 'running' ? 'pause' : 'resume') : focusOp('start', task.id);
   };
   const taskAction = (task: Task) => ['accepted', 'cancelled'].includes(task.state) ? transition(task.id, task.revision, 'defining') : task.state === 'awaiting_acceptance' ? review(task) : openTask(task.id);
+  const completeTask = (task: Task) => run(async () => {
+    await api('task-complete', { id: task.id, revision: task.revision, confirmed: true });
+    await refresh(true);
+  }, t('task.completedByUser'), true);
 
   useEffect(() => {
     let stopped = false;
@@ -281,7 +285,7 @@ function Workspace() {
         onSave={data => run(async () => { await mutate(task ? { action: 'update', kind: 'task', id: task.id, revision: task.revision, data } : { action: 'create', kind: 'task', data, requestId: modal.requestId!, ...(modal.planDate ? { planDate: modal.planDate } : {}) }); modal.onCreated?.(); }, modal.planDate ? t("today.added") : t("task.saved"), true)}
         onTransition={state => transition(task!.id, task.revision, state, true)}
         onBind={sessionId => run(async () => { await mutate({ action: 'bind', id: task.id, revision: task.revision, sessionId }); const detail = await api('task', { id: task.id }); open({ type: 'task', ...detail, returnTo: modal.returnTo }); }, t("ai.linkSaved"))}
-        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onOpenCodex={() => openCodex(task)} onDelete={() => deleteEntity('task', task)} />;
+        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onComplete={() => completeTask(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onOpenCodex={() => openCodex(task)} onDelete={() => deleteEntity('task', task)} />;
     } else if (modal.type === 'daily_plan') {
       modalTitle = t("today.arrange"); modalDescription = t("today.dateHint", { date: modal.date });
       modalBody = <DailyPlanEditor snapshot={snapshot} plans={modal.plans!} initial={modal.draft} busy={busy} onCreateTask={() => createToday()} onInbox={openInbox}
@@ -322,7 +326,7 @@ function Workspace() {
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? t("inbox.archived") : t("inbox.restored"))} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><div className="segmented-control">{[['board', t("board.mode")], ['timeline', t("timeline.mode")]].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div><span className="muted">{t("board.summary", { taskCount: t("board.taskCount", { count: filtered.length }), sessionCount: t("board.sessionCount", { count: boardSessionCount }) })}</span></div><div className="execution-filters"><SelectField label={t("entity.project")} value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: t("project.all") }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label={t("board.search")} placeholder={t("board.searchPlaceholder")} value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
       {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">{t("connection.hookSetup")}</p>}
-      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenCodex={openCodex} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onOpenCodex={openCodex} onReschedule={reschedule} />}
+      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} onCompleteTask={completeTask} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenCodex={openCodex} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onCompleteTask={completeTask} onOpenCodex={openCodex} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">{t("task.cancelledCount", { count: filtered.filter(task => task.state === 'cancelled').length })}</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

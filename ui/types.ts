@@ -21,6 +21,7 @@ export interface TaskCallbacks {
   onOpenTask: (id: string, returnTo?: Modal) => Promise<boolean>;
   onOpenSession: (id: string) => Promise<boolean>;
   onReviewTask: (task: Task, decision?: Decision) => Promise<boolean>;
+  onCompleteTask: (task: Task) => Promise<boolean>;
   onOpenCodex: (task: Task) => Promise<boolean>;
   onTransition: (id: string, revision: number, state: TransitionState, close?: boolean) => Promise<boolean>;
   onReschedule: (task: Task, days: number, edge?: RescheduleEdge) => Promise<boolean>;
@@ -32,7 +33,7 @@ export interface TaskEditorProps {
   onRefine: (draft: TaskDraft, receive: (suggestion: DefinitionSuggestion) => void, field: DefinitionField) => Promise<boolean>;
   onSyncProjects: () => Promise<boolean>; onTransition: (state: TransitionState) => Promise<boolean>;
   onBind: (sessionId: string | null) => Promise<boolean>;
-  onSubmitDelivery: () => void; onReview: () => Promise<boolean>; onFocus: () => Promise<boolean>;
+  onSubmitDelivery: () => void; onReview: () => Promise<boolean>; onComplete: () => Promise<boolean>; onFocus: () => Promise<boolean>;
   onPrompt: () => Promise<boolean>; onOpenCodex: () => Promise<boolean>; onDelete: () => void;
 }
 export interface TodayProps extends CaptureCallbacks {

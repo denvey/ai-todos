@@ -46,6 +46,7 @@ const server = createServer(async (req, res) => {
       if (path === '/internal/command' && req.method === 'POST') return send(res, 200, store.command(await body(req), 'model'));
       if (path === '/internal/codex' && req.method === 'POST') return send(res, 200, await codexAction(store, await body(req)));
       if (path === '/internal/session-confirm' && req.method === 'POST') return send(res, 200, store.confirmSession(await body(req)));
+      if (path === '/internal/task-complete' && req.method === 'POST') return send(res, 200, store.completeTask(await body(req)));
       if (path === '/internal/stop' && req.method === 'POST') { send(res, 200, { stopped: true }); setImmediate(shutdown); return; }
       return send(res, 404, errorPayload(new DomainError('errors.routeMissing')));
     }
@@ -67,6 +68,7 @@ const server = createServer(async (req, res) => {
     if (path === '/api/command' && req.method === 'POST') return send(res, 200, store.command(await body(req), 'human'));
     if (path === '/api/codex' && req.method === 'POST') return send(res, 200, await codexAction(store, await body(req)));
     if (path === '/api/session-confirm' && req.method === 'POST') return send(res, 200, store.confirmSession(await body(req)));
+    if (path === '/api/task-complete' && req.method === 'POST') return send(res, 200, store.completeTask(await body(req)));
     if (path === '/api/review-ticket' && req.method === 'POST') {
       const { id, revision } = await body(req); const task = store.get('task', id); store.check(task, revision);
       if (task.state !== 'awaiting_acceptance') return send(res, 400, errorPayload(new DomainError('errors.deliveryRequired')));
