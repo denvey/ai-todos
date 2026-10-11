@@ -42533,6 +42533,11 @@ var loadLanguages = instance.loadLanguages;
 
 // src/locales/en.ts
 var en_default3 = {
+  "task.nextComplete": "If this task is done, confirm completion to move it to Completed.",
+  "task.pendingCompletion": "Confirm completion",
+  "task.completedByUser": "Task completion confirmed by the user",
+  "errors.completionState": "This task cannot be completed directly. Review submitted deliveries instead.",
+  "errors.completionActive": "AI is still working or waiting for a response. Finish the current turn in the chat first.",
   "time.previousMonth": "Go to previous month",
   "time.nextMonth": "Go to next month",
   "time.dateLabel": "{{date}}",
@@ -42659,10 +42664,10 @@ var en_default3 = {
   "task.name": "Task name",
   "task.title": "Task title",
   "task.description": "Task description",
-  "task.criteria": "Acceptance criteria",
+  "task.criteria": "Acceptance criteria (optional)",
   "task.definition": "Task description and acceptance criteria",
   "task.namePlaceholder": "Enter a task; AI can improve its title and definition.",
-  "task.criteriaPlaceholder": "Write observable, verifiable results before marking the task ready.",
+  "task.criteriaPlaceholder": "Optional: describe the results you want to check.",
   "task.priority": "Priority",
   "priority.low": "Low",
   "priority.normal": "Normal",
@@ -42681,7 +42686,19 @@ var en_default3 = {
   "task.reopen": "Reopen task",
   "task.advance": "Advance task",
   "task.redefine": "Redefine",
-  "task.ready": "Mark ready",
+  "task.ready": "Confirm requirements",
+  "task.nextStep": "Next step",
+  "task.nextReview": "Check the delivery and evidence, then accept or request changes.",
+  "task.nextApproval": "Open the chat and respond to the pending approval request.",
+  "task.nextInput": "Open the chat and answer the AI's question or provide the missing information.",
+  "task.nextResume": "Open the chat, check why execution failed or stopped, then continue.",
+  "task.nextRunning": "AI is working. Open the chat to view progress.",
+  "task.saveBeforeNext": "You have unsaved changes. Save them before the next step.",
+  "task.handleApproval": "Review approval",
+  "task.reply": "Reply to AI",
+  "task.resumeSession": "Check and continue",
+  "task.viewProgress": "View progress",
+  "task.otherActions": "Other actions",
   "task.execute": "Start execution",
   "task.cancel": "Cancel task",
   "task.deleteUnstarted": "Delete unstarted task",
@@ -42689,8 +42706,8 @@ var en_default3 = {
   "task.lockedHint": "The current state preserves the reviewed content. Request changes or reopen the task before editing.",
   "task.reviewedRevision": "Revision actually reviewed: r{{revision}}",
   "task.deliveryState": "Delivery: {{state}}",
-  "state.defining": "Needs definition",
-  "state.ready": "Ready to start",
+  "state.defining": "Confirm requirements",
+  "state.ready": "Confirmed",
   "state.executing": "AI in execution",
   "state.awaitingAcceptance": "Awaiting my acceptance",
   "state.changesRequested": "Changes requested",
@@ -42704,6 +42721,7 @@ var en_default3 = {
   "runtime.interrupted": "Interrupted",
   "runtime.failed": "Execution failed",
   "runtime.pendingConfirmation": "Awaiting confirmation",
+  "runtime.turnEnded": "Turn ended",
   "runtime.unknown": "Status unconfirmed",
   "runtime.planningQueued": "Planning queued",
   "runtime.planningRunning": "Planning",
@@ -43025,7 +43043,6 @@ var en_default3 = {
   "errors.sessionBound": "This chat is already linked to a task. Continue using that task.",
   "errors.transition": "Cannot transition from {{from}} to {{to}}.",
   "errors.humanReopen": "Reopening an accepted task must be done by a person in the UI.",
-  "errors.criteriaRequired": "Provide acceptance criteria first.",
   "errors.bindBeforeExecute": "Link a trusted chat before AI execution.",
   "errors.finishFocus": "Finish this task's focus timer first.",
   "errors.submitState": "Only tasks in execution can submit a delivery.",
@@ -43092,6 +43109,11 @@ var en_default3 = {
 
 // src/locales/zh-CN.ts
 var zh_CN_default2 = {
+  "task.nextComplete": "\u5982\u679C\u8FD9\u9879\u4EFB\u52A1\u5DF2\u7ECF\u505A\u5B8C\uFF0C\u70B9\u51FB\u201C\u786E\u8BA4\u5B8C\u6210\u201D\u79FB\u5230\u5DF2\u5B8C\u6210\u3002",
+  "task.pendingCompletion": "\u5F85\u786E\u8BA4\u5B8C\u6210",
+  "task.completedByUser": "\u7528\u6237\u786E\u8BA4\u4EFB\u52A1\u5B8C\u6210",
+  "errors.completionState": "\u5F53\u524D\u4EFB\u52A1\u4E0D\u80FD\u76F4\u63A5\u786E\u8BA4\u5B8C\u6210\uFF1B\u5F85\u9A8C\u6536\u4EFB\u52A1\u8BF7\u5BA1\u9605\u4EA4\u4ED8\u3002",
+  "errors.completionActive": "AI \u4ECD\u5728\u5904\u7406\u6216\u7B49\u5F85\u56DE\u590D\uFF0C\u8BF7\u5148\u5728\u4F1A\u8BDD\u4E2D\u7ED3\u675F\u672C\u8F6E\u5DE5\u4F5C\u3002",
   "time.previousMonth": "\u4E0A\u4E2A\u6708",
   "time.nextMonth": "\u4E0B\u4E2A\u6708",
   "time.dateLabel": "{{date}}",
@@ -43215,10 +43237,10 @@ var zh_CN_default2 = {
   "task.name": "\u4EFB\u52A1\u540D\u79F0",
   "task.title": "\u4EFB\u52A1\u6807\u9898",
   "task.description": "\u4EFB\u52A1\u8BF4\u660E",
-  "task.criteria": "\u9A8C\u6536\u6807\u51C6",
+  "task.criteria": "\u9A8C\u6536\u6807\u51C6\uFF08\u9009\u586B\uFF09",
   "task.definition": "\u4EFB\u52A1\u8BF4\u660E\u4E0E\u9A8C\u6536\u6807\u51C6",
   "task.namePlaceholder": "\u8F93\u5165\u4EFB\u52A1\uFF0CAI \u53EF\u5B8C\u5584\u6807\u9898\u4E0E\u5B9A\u4E49",
-  "task.criteriaPlaceholder": "\u5199\u4E0B\u53EF\u89C2\u5BDF\u3001\u53EF\u6838\u5BF9\u7684\u7ED3\u679C\uFF0C\u624D\u80FD\u8BBE\u4E3A\u5C31\u7EEA\u3002",
+  "task.criteriaPlaceholder": "\u9009\u586B\uFF1A\u5199\u4E0B\u4F60\u5E0C\u671B\u6838\u5BF9\u7684\u7ED3\u679C\u3002",
   "task.priority": "\u4F18\u5148\u7EA7",
   "priority.low": "\u4F4E",
   "priority.normal": "\u666E\u901A",
@@ -43237,7 +43259,19 @@ var zh_CN_default2 = {
   "task.reopen": "\u91CD\u5F00\u4EFB\u52A1",
   "task.advance": "\u63A8\u8FDB\u4EFB\u52A1",
   "task.redefine": "\u91CD\u65B0\u5B9A\u4E49",
-  "task.ready": "\u8BBE\u4E3A\u5C31\u7EEA",
+  "task.ready": "\u786E\u8BA4\u8981\u6C42",
+  "task.nextStep": "\u4E0B\u4E00\u6B65",
+  "task.nextReview": "\u68C0\u67E5\u4EA4\u4ED8\u7ED3\u679C\u548C\u8BC1\u636E\uFF0C\u9009\u62E9\u901A\u8FC7\u6216\u9000\u56DE\u3002",
+  "task.nextApproval": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u5904\u7406 AI \u6B63\u5728\u7B49\u5F85\u7684\u5BA1\u6279\u3002",
+  "task.nextInput": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u56DE\u590D AI \u7684\u95EE\u9898\u6216\u8865\u5145\u6240\u9700\u4FE1\u606F\u3002",
+  "task.nextResume": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u68C0\u67E5\u5931\u8D25\u6216\u4E2D\u65AD\u539F\u56E0\u540E\u7EE7\u7EED\u3002",
+  "task.nextRunning": "AI \u6B63\u5728\u5904\u7406\uFF0C\u53EF\u6253\u5F00\u4F1A\u8BDD\u67E5\u770B\u8FDB\u5EA6\u3002",
+  "task.saveBeforeNext": "\u6709\u672A\u4FDD\u5B58\u7684\u66F4\u6539\uFF0C\u8BF7\u5148\u4FDD\u5B58\uFF0C\u518D\u8FDB\u884C\u4E0B\u4E00\u6B65\u3002",
+  "task.handleApproval": "\u5904\u7406\u5BA1\u6279",
+  "task.reply": "\u56DE\u590D AI",
+  "task.resumeSession": "\u68C0\u67E5\u5E76\u7EE7\u7EED",
+  "task.viewProgress": "\u67E5\u770B\u8FDB\u5EA6",
+  "task.otherActions": "\u5176\u4ED6\u64CD\u4F5C",
   "task.execute": "\u5F00\u59CB\u6267\u884C",
   "task.cancel": "\u53D6\u6D88\u4EFB\u52A1",
   "task.deleteUnstarted": "\u5220\u9664\u672A\u6267\u884C\u4EFB\u52A1",
@@ -43245,8 +43279,8 @@ var zh_CN_default2 = {
   "task.lockedHint": "\u5F53\u524D\u72B6\u6001\u4FDD\u7559\u5BA1\u9605\u5185\u5BB9\u3002\u9700\u8981\u66F4\u6539\u8BF7\u5148\u9000\u56DE\u6216\u91CD\u65B0\u6253\u5F00\u3002",
   "task.reviewedRevision": "\u672C\u6B21\u5B9E\u9645\u5BA1\u9605\u7248\u672C r{{revision}}",
   "task.deliveryState": "\u4EA4\u4ED8\uFF1A{{state}}",
-  "state.defining": "\u9700\u8865\u5145\u8981\u6C42",
-  "state.ready": "\u53EF\u4EE5\u5F00\u59CB",
+  "state.defining": "\u5F85\u786E\u8BA4\u8981\u6C42",
+  "state.ready": "\u5DF2\u786E\u5B9A",
   "state.executing": "AI \u6267\u884C\u4E2D",
   "state.awaitingAcceptance": "\u5F85\u6211\u9A8C\u6536",
   "state.changesRequested": "\u9700\u4FEE\u6539",
@@ -43260,6 +43294,7 @@ var zh_CN_default2 = {
   "runtime.interrupted": "\u5DF2\u4E2D\u65AD",
   "runtime.failed": "\u6267\u884C\u5931\u8D25",
   "runtime.pendingConfirmation": "\u5F85\u786E\u5B9A",
+  "runtime.turnEnded": "\u672C\u8F6E\u5DF2\u7ED3\u675F",
   "runtime.unknown": "\u72B6\u6001\u672A\u786E\u8BA4",
   "runtime.planningQueued": "\u7B49\u5F85\u89C4\u5212",
   "runtime.planningRunning": "\u6B63\u5728\u89C4\u5212",
@@ -43572,7 +43607,6 @@ var zh_CN_default2 = {
   "errors.sessionBound": "\u8BE5\u4F1A\u8BDD\u5DF2\u7ED1\u5B9A\u4EFB\u52A1\uFF0C\u8BF7\u7EE7\u7EED\u4F7F\u7528\u539F\u4EFB\u52A1",
   "errors.transition": "\u4E0D\u80FD\u4ECE {{from}} \u53D8\u4E3A {{to}}",
   "errors.humanReopen": "\u91CD\u65B0\u6253\u5F00\u5DF2\u9A8C\u6536\u4EFB\u52A1\u5FC5\u987B\u7531\u4EBA\u5728\u754C\u9762\u64CD\u4F5C",
-  "errors.criteriaRequired": "\u8BF7\u5148\u586B\u5199\u9A8C\u6536\u6807\u51C6",
   "errors.bindBeforeExecute": "AI \u6267\u884C\u524D\u5FC5\u987B\u7ED1\u5B9A\u53EF\u4FE1\u4F1A\u8BDD",
   "errors.finishFocus": "\u8BF7\u5148\u7ED3\u675F\u6B64\u4EFB\u52A1\u7684\u4E13\u6CE8\u8BA1\u65F6",
   "errors.submitState": "\u53EA\u6709\u6267\u884C\u4E2D\u7684\u4EFB\u52A1\u53EF\u63D0\u4EA4\u4EA4\u4ED8",
@@ -43685,6 +43719,7 @@ var commandSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ action: external_exports.literal("ack"), id }).strict()
 ]);
 var reviewSchema = external_exports.object({ id, revision, decision: external_exports.enum(["accept", "reject"]), confirmed: external_exports.literal(true), reviewer: text, note: note.default("") }).strict();
+var taskCompleteSchema = reviewSchema.pick({ id: true, revision: true, confirmed: true });
 var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 function errorPayload(error62) {
   const message = error62 instanceof Error ? error62.message : String(error62);
@@ -43882,7 +43917,7 @@ server.registerTool("ai_todos_snapshot", { description: "Read persistent tasks, 
 }));
 server.registerTool("ai_todos_task", { description: "Read one task and its delivery/acceptance history. Use the returned revision for a subsequent mutation. Never replace a human-reviewed revision with a newer one.", inputSchema: external_exports.object({ id: external_exports.string().uuid() }), annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { visibility: ["model", "app"] } } }, guarded((args) => service("task", args)));
 server.registerTool("ai_todos_manage", {
-  description: "Create/update/delete task, inbox capture, project, objective, keyResult or plan. create_tasks atomically creates tasks and adds them to planDate. promote converts an inbox capture to a task, optionally adding it to planDate. daily_plan selects the union of tasks for one date; plans must contain every plan ID and revision actually read for that date. Creation/promotion requestId is a UUID generated once and reused on retries. Bind only an official API-synced or hook-observed session ID; transition defining \u2192 ready \u2192 executing; submit real delivery summary and absolute-path/HTTP(S) evidence; manage persisted focus/settings/reminders. All updates require the revision actually read. Ready requires acceptance criteria. Stop is never delivery or acceptance. No accept/reject operation is available to AI: people must review evidence in the local UI. Do not infer acceptance, forge evidence or session IDs. Starting execution records intent and does not start Codex by itself.",
+  description: "Create/update/delete task, inbox capture, project, objective, keyResult or plan. create_tasks atomically creates tasks and adds them to planDate. promote converts an inbox capture to a task, optionally adding it to planDate. daily_plan selects the union of tasks for one date; plans must contain every plan ID and revision actually read for that date. Creation/promotion requestId is a UUID generated once and reused on retries. Bind only an official API-synced or hook-observed session ID; transition defining \u2192 ready \u2192 executing; submit real delivery summary and absolute-path/HTTP(S) evidence; manage persisted focus/settings/reminders. All updates require the revision actually read. Description and acceptance criteria are optional. Stop is never delivery or acceptance. No complete/accept/reject operation is available to AI: people confirm completion or review submitted evidence in the UI. Do not infer acceptance, forge evidence or session IDs. Starting execution records intent and does not start Codex by itself.",
   inputSchema: external_exports.object({ command: commandSchema }),
   annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
   _meta: { ui: { visibility: ["model", "app"] } }
@@ -43890,6 +43925,7 @@ server.registerTool("ai_todos_manage", {
 server.registerTool("ai_todos_codex", { description: "Sync Codex projects and conversations, prepare and bind a task conversation, open an observed session in the desktop app, or generate a definition suggestion. Creating/opening a session does not execute or accept a task.", inputSchema: external_exports.object({ action: codexActionSchema }), annotations: { readOnlyHint: false, openWorldHint: true }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("codex", args.action)));
 server.registerTool("ai_todos_confirm_session", { description: "Record the human UI action confirming an unbound, stopped conversation complete at its displayed observation. This is not business task acceptance.", inputSchema: sessionConfirmSchema, annotations: { readOnlyHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("session-confirm", args)));
 G(server, "ai-todos workspace", uri, { description: "Persistent local productivity workspace" }, async () => ({ contents: [{ uri, mimeType: L, text: readFileSync2(new URL("../dist/app.html", import.meta.url), "utf8").replaceAll("__AI_TODOS_ORIGIN__", origin), _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] }, prefersBorder: false } } }] }));
+server.registerTool("ai_todos_complete_task", { description: "Record an explicit human UI action confirming the displayed revision of a stopped task complete. Not available to AI.", inputSchema: taskCompleteSchema, annotations: { readOnlyHint: false, openWorldHint: false }, _meta: { ui: { visibility: ["app"] } } }, guarded((args) => service("task-complete", args)));
 var transport = new StdioServerTransport();
 var send = transport.send.bind(transport);
 transport.send = (message) => {

@@ -42,6 +42,7 @@ export const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('ack'), id }).strict(),
 ]);
 const reviewSchema = z.object({ id, revision, decision: z.enum(['accept', 'reject']), confirmed: z.literal(true), reviewer: text, note: note.default('') }).strict();
+export const taskCompleteSchema = reviewSchema.pick({ id: true, revision: true, confirmed: true });
 export const sessionConfirmSchema = z.object({ id, observedAt: date, event: z.string().min(1).max(200), turnId: z.string().max(200).nullable(), catalogUpdatedAt: date.nullable(), confirmed: z.literal(true) }).strict();
 export class DomainError extends Error {
   declare status: number;
@@ -293,7 +294,6 @@ export class Store {
         const allowed: Partial<Record<Task["state"], string[]>> = { defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['ready', 'executing', 'cancelled'], cancelled: ['defining'], accepted: ['defining'] };
         requireThat(allowed[task.state]?.includes(c.state), 'errors.transition', 400, { from: task.state, to: c.state });
         if (task.state === 'accepted') requireThat(authority === 'human', "errors.humanReopen");
-        if (c.state === 'ready') requireThat(task.criteria.trim(), "errors.criteriaRequired");
         if (c.state === 'executing' && authority === 'model') requireThat(task.sessionId, "errors.bindBeforeExecute");
         if (c.state === 'cancelled') requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', "errors.finishFocus");
         task.state = c.state;
@@ -318,12 +318,27 @@ export class Store {
       const task = this.get('task', c.id); this.check(task, c.revision);
       requireThat(task.state === 'awaiting_acceptance' && task.delivery?.evidence.length, "errors.reviewState");
       if (c.decision === 'reject') requireThat(c.note.trim(), "errors.rejectReason");
-      requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', "errors.finishFocus");
-      task.state = c.decision === 'accept' ? 'accepted' : 'changes_requested';
-      task.revision++; task.updatedAt = this.at();
-      task.review = { decision: c.decision, reviewer: c.reviewer, note: c.note, at: this.at(), reviewedRevision: c.revision };
-      this.save('task', task); this.event(task.id, 'review', { ...task.review, delivery: task.delivery }); return task;
+      return this.recordReview(task, c);
     });
+  }
+  completeTask(raw: unknown) {
+    const c = taskCompleteSchema.parse(raw);
+    return this.transaction(() => {
+      const task = this.get('task', c.id); this.check(task, c.revision);
+      requireThat(['defining', 'ready', 'executing', 'changes_requested'].includes(task.state), 'errors.completionState');
+      const session = this.sessions().find(session => session.id === task.sessionId);
+      requireThat(!session || !['queued', 'running', 'waiting_approval', 'waiting_input'].includes(runtimeState(session.state)), 'errors.completionActive');
+      const focus = this.focus();
+      if (focus.taskId === task.id && focus.status !== 'idle') this.changeFocus({ action: 'focus', operation: 'finish', revision: focus.revision });
+      return this.recordReview(task, { ...c, decision: 'accept', reviewer: 'human', note: i18n.t('task.completedByUser') });
+    });
+  }
+  private recordReview(task: Task, c: z.output<typeof reviewSchema>) {
+    requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', "errors.finishFocus");
+    task.state = c.decision === 'accept' ? 'accepted' : 'changes_requested';
+    task.revision++; task.updatedAt = this.at();
+    task.review = { decision: c.decision, reviewer: c.reviewer, note: c.note, at: this.at(), reviewedRevision: c.revision };
+    this.save('task', task); this.event(task.id, 'review', { ...task.review, delivery: task.delivery }); return task;
   }
   confirmSession(raw: unknown): Session {
     const c = sessionConfirmSchema.parse(raw);

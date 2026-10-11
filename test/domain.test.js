@@ -34,11 +34,10 @@ test('persistent CRUD, request idempotency, references, scheduling and stale rev
   assert.equal(s.get('plan', plan.id).taskIds[0], task.id);
 });
 
-test('workflow requires criteria, evidence and explicit human review on the reviewed revision', t => {
+test('workflow allows empty criteria and requires evidence and explicit human review on the reviewed revision', t => {
   const { store: s } = fixture(t); let task = create(s, 'task', { title: '交付任务' });
-  assert.throws(() => transition(s, task, 'ready'), /验收标准/);
-  task = s.command({ action: 'update', kind: 'task', id: task.id, revision: task.revision, data: { criteria: '文件可读取' } });
   task = transition(s, task, 'ready');
+  assert.equal(task.criteria, '');
   assert.throws(() => transition(s, task, 'executing', 'model'), /可信会话/);
   task = transition(s, task, 'executing');
   assert.throws(() => s.command({ action: 'transition', id: task.id, revision: task.revision, state: 'accepted' }), /Invalid option/);
@@ -51,6 +50,7 @@ test('workflow requires criteria, evidence and explicit human review on the revi
   assert.throws(() => s.command({ action: 'update', kind: 'task', id: task.id, revision: task.revision, data: { title: '替换审阅内容' } }), /退回/);
   const reviewedRevision = task.revision; task = review(s, task);
   assert.equal(task.state, 'accepted'); assert.equal(task.review.reviewedRevision, reviewedRevision);
+  assert.equal(task.criteria, '');
   assert.equal(s.taskHistory(task.id).filter(e => e.type === 'review').length, 2);
   assert.throws(() => transition(s, task, 'defining', 'model'), /由人/);
 });
@@ -71,13 +71,13 @@ test('hook-observed IDs, unique binding, Xinmo planning projection and Stop neve
   snapshot = s.snapshot(); projected = snapshot.tasks.find(t => t.id === task.id);
   assert.equal(projected.state, 'defining');
   assert.equal(executionColumnForTask(projected), 'waiting_user');
-  assert.equal(taskStatus(projected), '待确定');
+  assert.equal(taskStatus(projected), '待确认完成');
   assert.deepEqual(visibleExecutionSessions(snapshot.sessions, snapshot.tasks), []);
   assert.equal(snapshot.sessions[0].mode, undefined);
   task = transition(s, task, 'ready');
   projected = s.snapshot().tasks.find(t => t.id === task.id);
   assert.equal(projected.ai.mode, 'execution');
-  assert.equal(executionColumnForTask(projected), 'ready');
+  assert.equal(executionColumnForTask(projected), 'waiting_user');
   s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'UserPromptSubmit', turn_id: 'turn-2' });
   task = transition(s, task, 'executing', 'model');
   assert.equal(s.snapshot().tasks.find(t => t.id === task.id).ai.mode, 'execution');
@@ -88,6 +88,57 @@ test('hook-observed IDs, unique binding, Xinmo planning projection and Stop neve
   s.observe({ session_id: sessionId, cwd: '/tmp/project', hook_event_name: 'Stop', turn_id: 'turn-2' });
   assert.equal(s.get('task', task.id).state, 'executing'); assert.equal(s.sessions()[0].state, 'idle');
   assert.equal(s.get('task', task.id).delivery, undefined);
+});
+
+test('explicit manual completion accepts empty tasks and records the displayed revision without inventing delivery', t => {
+  const { store: s } = fixture(t);
+  for (const state of ['defining', 'ready', 'executing', 'changes_requested']) {
+    let task = create(s, 'task', { title: `人工完成 ${state}` });
+    if (state !== 'defining') task = transition(s, task, 'ready');
+    if (['executing', 'changes_requested'].includes(state)) task = transition(s, task, 'executing');
+    if (state === 'changes_requested') task = review(s, submit(s, task), 'reject');
+    const input = { id: task.id, revision: task.revision, confirmed: true };
+    assert.throws(() => s.completeTask({ ...input, confirmed: false }));
+    assert.throws(() => s.completeTask({ ...input, revision: input.revision + 1 }), /数据已更新/);
+    const completed = s.completeTask(input);
+    assert.equal(completed.state, 'accepted');
+    assert.equal(completed.review.reviewedRevision, input.revision);
+    assert.equal(completed.review.reviewer, 'human');
+    assert.equal(completed.criteria, '');
+    assert.deepEqual(completed.delivery, task.delivery);
+    assert.equal(executionColumnForTask(completed), 'completed');
+    assert.throws(() => s.completeTask(input), /数据已更新/);
+    assert.throws(() => s.completeTask({ ...input, revision: completed.revision }), /完成/);
+    assert.equal(s.taskHistory(task.id).filter(e => e.type === 'review').length, state === 'changes_requested' ? 2 : 1);
+  }
+  let submitted = create(s, 'task', { title: '待审阅交付' });
+  submitted = submit(s, transition(s, transition(s, submitted, 'ready'), 'executing'));
+  assert.throws(() => s.completeTask({ id: submitted.id, revision: submitted.revision, confirmed: true }), /完成/);
+  let cancelled = create(s, 'task', { title: '已取消' });
+  cancelled = transition(s, cancelled, 'cancelled');
+  assert.throws(() => s.completeTask({ id: cancelled.id, revision: cancelled.revision, confirmed: true }), /完成/);
+});
+
+test('manual completion rejects an active linked session and finishes existing focus after Stop', t => {
+  const { store: s, advance } = fixture(t); const sessionId = randomUUID();
+  let task = create(s, 'task', { title: '关联会话完成' });
+  s.observe({ session_id: sessionId, cwd: '/tmp/test', hook_event_name: 'UserPromptSubmit', turn_id: 'turn' });
+  task = s.command({ action: 'bind', id: task.id, revision: task.revision, sessionId });
+  const input = { id: task.id, revision: task.revision, confirmed: true };
+  s.command({ action: 'focus', operation: 'start', taskId: task.id, revision: 0 });
+  advance(30000);
+  assert.throws(() => s.completeTask(input), { code: 'errors.completionActive' });
+  assert.equal(s.snapshot().focus.status, 'running');
+  s.observe({ session_id: sessionId, cwd: '/tmp/test', hook_event_name: 'PermissionRequest', turn_id: 'turn' });
+  assert.throws(() => s.completeTask(input), { code: 'errors.completionActive' });
+  s.observe({ session_id: sessionId, cwd: '/tmp/test', hook_event_name: 'Stop', turn_id: 'turn' });
+  task = s.completeTask(input);
+  const snapshot = s.snapshot();
+  assert.equal(snapshot.focus.status, 'idle');
+  assert.equal(snapshot.timeRecords[0].durationMs, 30000);
+  assert.equal(snapshot.sessions.length, 1);
+  assert.deepEqual(visibleExecutionSessions(snapshot.sessions, snapshot.tasks), []);
+  assert.equal(task.delivery, undefined);
 });
 
 test('focus survives process restart, pause/resume excludes pause, stale clicks do not double record', t => {
