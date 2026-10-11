@@ -200,7 +200,7 @@ export class Store {
         this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?)').run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
       }
-      for (const previous of existing.values()) if (complete && previous.catalogVisible && !seen.has(previous.id)) {
+      for (const previous of existing.values()) if (complete && previous.catalogVisible !== false && !seen.has(previous.id)) {
         this.db.prepare('UPDATE sessions SET body=? WHERE id=?').run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
       }
       return { count: seen.size, added, updated };

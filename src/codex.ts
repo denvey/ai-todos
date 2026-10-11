@@ -91,7 +91,7 @@ async function withCodex<T>(action: (connection: CodexConnection) => T | Promise
   try {
     return await Promise.race([failure, (async () => {
       if (socket) await new Promise<void>(resolve => socket.once('open', resolve));
-      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.9' }, capabilities: { experimentalApi: true } });
+      await request('initialize', { clientInfo: { name: 'ai-todos', version: '0.1.10' }, capabilities: { experimentalApi: true } });
       send({ method: 'initialized' });
       return action({ cwd, request, notifications: listener => { onNotification = listener; } });
     })()]);

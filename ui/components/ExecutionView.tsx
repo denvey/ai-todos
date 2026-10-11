@@ -35,9 +35,12 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
     </div>
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
-      {(handleRuntime || (task.state === 'awaiting_acceptance' && onReviewTask)) && <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession!(task.sessionId!) : onReviewTask!(task)}><ListTodo size={12} />{handleRuntime ? t("session.handle") : t("review.action")}</button>}
+      <div className="execution-card__buttons">
+        {(handleRuntime || ((task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex)) && <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession!(task.sessionId!) : onOpenCodex!(task)}><ExternalLink size={12} />{t("session.open")}</button>}
+        {task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask(task)}><ListTodo size={12} />{t("review.action")}</button>}
+      </div>
     </div>
-    <div className="execution-card__badges execution-card__actions">{(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <AiBadge task={task} />}{(task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><Code2 size={12} />{t("ai.openCodex")}</button>}</div>
+    {(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <div className="execution-card__badges"><AiBadge task={task} /></div>}
     <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
       <div className="execution-card__body">
         <span className="execution-card__topline"><span>{t("task.priorityLabel", { priority: t(priorityLabels[task.priority]) })}</span><span>r{task.revision}</span></span>
@@ -60,7 +63,7 @@ function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmS
   const completed = sessionColumn(session) === 'completed';
   return <article className="execution-card execution-session-card" draggable={!busy && canConfirm && !!onDragStart} title={canConfirm ? t("session.dragConfirm") : undefined} onDragStart={event => onDragStart?.(event, session)} onDragEnd={onDragEnd}>
     <button type="button" className="execution-card__summary" aria-expanded={expanded} aria-controls={`execution-session-${session.id}`} onClick={() => setExpanded(value => !value)}><strong title={title}>{title}</strong><ChevronDown size={14} /></button>
-    <div className="execution-card__primary execution-card__actions"><span className={`execution-status status-${completed ? 'accepted' : runtimeState(session.state)}`}>{completed ? t("board.completed") : runtimeLabel(session)}</span><div className="execution-session-card__actions"><button type="button" disabled={busy} onClick={() => onOpenSession(session.id)}><ExternalLink size={12} />{!canConfirm && sessionColumn(session) === 'waiting_user' ? t("session.handle") : t("session.open")}</button>{canConfirm && onConfirmSession && <button type="button" disabled={busy} onClick={() => onConfirmSession(session)}><Check size={12} />{t("session.confirm")}</button>}</div></div>
+    <div className="execution-card__primary execution-card__actions"><span className={`execution-status status-${completed ? 'accepted' : runtimeState(session.state)}`}>{completed ? t("board.completed") : runtimeLabel(session)}</span><div className="execution-card__buttons"><button type="button" disabled={busy} onClick={() => onOpenSession(session.id)}><ExternalLink size={12} />{t("session.open")}</button>{canConfirm && onConfirmSession && <button type="button" disabled={busy} onClick={() => onConfirmSession(session)}><Check size={12} />{t("session.confirm")}</button>}</div></div>
     <div id={`execution-session-${session.id}`} className="execution-card__content" hidden={!expanded}><div className="execution-card__body">
       <div className="execution-card__topline"><span className="execution-session-card__source" title={session.cwd}><Code2 size={11} aria-hidden="true" /><span>Codex{workspace ? ` · ${workspace}` : ''}</span></span><span>{fmt(session.catalogUpdatedAt || session.observedAt)}</span></div>
       {session.confirmedAt && <small>{t("session.confirmedAt", { at: fmt(session.confirmedAt) })}</small>}
@@ -113,7 +116,7 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
             } else onTransition(task.id, value.revision, 'executing');
           } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
         }}>
-        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length, sessions: sessionItems.length > 0 ? t("board.sessionCount", { count: sessionItems.length }) : '' })}</em></header>
+        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length })}{sessionItems.length > 0 && <> · {t("board.sessionCount", { count: sessionItems.length })}</>}</em></header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={t("board.cards", { label: t(column.label) })}>
           {completed ? completedItems.slice(0, showCompletedHistory ? undefined : 5).map(item => item.kind === 'task' ? renderTask(item.value) : renderSession(item.value)) : <>{items.map(renderTask)}{sessionItems.slice(0, sessionLimits[column.id] || 50).map(renderSession)}</>}
           {!completed && sessionItems.length > (sessionLimits[column.id] || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, [column.id]: (current[column.id] || 50) + 50 }))}>{t("board.moreSessions", { count: sessionItems.length - (sessionLimits[column.id] || 50) })}</button>}

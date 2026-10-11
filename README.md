@@ -33,7 +33,28 @@ The plugin is prebuilt; no npm install or compilation is needed.
 
 Start a new Codex chat and ask **“Open the ai-todos workspace.”** If your client does not display the workspace, open the local `browserUrl` returned by the tool.
 
-To track live AI activity, run `codex` in a terminal and use `/hooks` to review and trust the ai-todos hooks. Historical chat synchronization works without hooks.
+### Review and trust the 8 lifecycle hooks
+
+The plugin automatically registers **8 hooks**, one for each event below. Installing or enabling the plugin does not trust them automatically. For complete hook-based live activity tracking:
+
+1. Run `codex` in a terminal and open `/hooks`, or open the hook settings in your Codex desktop app.
+2. Find the hooks from **ai-todos**, review all 8 against the table below, and enable and trust them.
+3. Save your choices. You do not need to add duplicate hooks to your global configuration.
+
+| Hook event | What ai-todos does |
+| --- | --- |
+| `SessionStart` | Records the session as idle and supplies its trusted ID and any linked task ID as background context. |
+| `UserPromptSubmit` | Marks the session as running and supplies the session and linked task context for the new turn. |
+| `PreToolUse` | Refreshes the running state before a tool call. |
+| `PostToolUse` | Refreshes the running state after a tool call; the turn may still be active. |
+| `PermissionRequest` | Marks the session as waiting for approval. It does not approve or deny the request. |
+| `Stop` | Marks the turn as idle. It does not complete or accept a business task. |
+| `Interrupt` | Records that the turn was interrupted. |
+| `SessionEnd` | Records that the session ended. It does not accept a business task. |
+
+All 8 run the same local `hooks/observe.js` script with a 3-second timeout. It records session identity, working directory, event, turn ID, activity time and observed state in local SQLite; it does not save prompt text or tool input/output content. Hooks observe activity separately from task delivery and human acceptance.
+
+Without trust, Codex skips these hooks. Task management and historical chat synchronization remain available, but hook-based live updates are unavailable. See the official [Codex hook trust documentation](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks).
 
 ## Update
 
@@ -43,6 +64,8 @@ codex plugin add ai-todos@ai-todos
 ```
 
 Start a new chat and reopen the workspace. Restart Codex if the old interface remains loaded.
+
+Keep using the same plugin source, `ai-todos@ai-todos`. The hook settings may show a versioned cache path such as `.../0.1.10/hooks/observe.js`; the definition uses `${PLUGIN_ROOT}`, which Codex resolves to the installed version when it loads the plugin. There is no path to edit manually. With the same source and unchanged hook definitions, a version upgrade alone does not require trusting the 8 hooks again. If Codex marks a hook as new or changed, review and trust its current definition; switching marketplace sources also creates a new trust identity.
 
 ## Use
 

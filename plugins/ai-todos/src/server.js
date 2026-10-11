@@ -25767,7 +25767,7 @@ var en_default2 = {
   "session.syncFailed": "Codex chat sync failed: {{value}}",
   "session.confirmed": "Chat confirmed complete",
   "session.confirmedAt": "Confirmed complete \xB7 {{at}}",
-  "session.open": "Open original chat",
+  "session.open": "Open chat",
   "session.handle": "Continue in original chat",
   "session.confirm": "Confirm complete",
   "session.dragConfirm": "Drag to Completed to confirm this turn's result.",
@@ -26054,7 +26054,6 @@ var en_default2 = {
   "ai.skip": "Dismiss",
   "ai.apply": "Apply suggestions",
   "ai.waiting": "Waiting for AI suggestions\u2026",
-  "ai.openCodex": "Open Codex",
   "ai.linkTitle": "AI chat link",
   "ai.unlinked": "Not linked yet",
   "ai.taskId": "Task ID: {{id}}",
@@ -26327,7 +26326,7 @@ var zh_CN_default2 = {
   "session.syncFailed": "Codex \u4F1A\u8BDD\u672A\u540C\u6B65\uFF1A{{value}}",
   "session.confirmed": "\u4F1A\u8BDD\u5DF2\u786E\u8BA4\u5B8C\u6210",
   "session.confirmedAt": "\u5DF2\u786E\u8BA4\u5B8C\u6210 \xB7 {{at}}",
-  "session.open": "\u6253\u5F00\u539F\u4F1A\u8BDD",
+  "session.open": "\u6253\u5F00\u4F1A\u8BDD",
   "session.handle": "\u56DE\u539F\u4F1A\u8BDD\u5904\u7406",
   "session.confirm": "\u786E\u8BA4\u5B8C\u6210",
   "session.dragConfirm": "\u62D6\u5230\u201C\u5DF2\u5B8C\u6210\u201D\u53EF\u786E\u8BA4\u672C\u8F6E\u7ED3\u679C",
@@ -26603,7 +26602,6 @@ var zh_CN_default2 = {
   "ai.skip": "\u6682\u4E0D\u91C7\u7528",
   "ai.apply": "\u5E94\u7528\u4F18\u5316",
   "ai.waiting": "\u7B49\u5F85 AI \u5EFA\u8BAE\u2026",
-  "ai.openCodex": "\u6253\u5F00 Codex",
   "ai.linkTitle": "AI \u4F1A\u8BDD\u5173\u8054",
   "ai.unlinked": "\u5C1A\u672A\u5173\u8054",
   "ai.taskId": "\u4EFB\u52A1 ID\uFF1A{{id}}",
@@ -27066,7 +27064,7 @@ var Store = class {
         this.db.prepare("INSERT OR REPLACE INTO sessions VALUES (?,?)").run(session.id, JSON.stringify(session));
         previous ? updated++ : added++;
       }
-      for (const previous of existing.values()) if (complete && previous.catalogVisible && !seen.has(previous.id)) {
+      for (const previous of existing.values()) if (complete && previous.catalogVisible !== false && !seen.has(previous.id)) {
         this.db.prepare("UPDATE sessions SET body=? WHERE id=?").run(JSON.stringify({ ...previous, catalogVisible: false }), previous.id);
       }
       return { count: seen.size, added, updated };
@@ -27412,7 +27410,7 @@ async function withCodex(action, timeout, shared = false) {
   try {
     return await Promise.race([failure2, (async () => {
       if (socket) await new Promise((resolve2) => socket.once("open", resolve2));
-      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.9" }, capabilities: { experimentalApi: true } });
+      await request("initialize", { clientInfo: { name: "ai-todos", version: "0.1.10" }, capabilities: { experimentalApi: true } });
       send2({ method: "initialized" });
       return action({ cwd, request, notifications: (listener) => {
         onNotification = listener;
@@ -27666,7 +27664,7 @@ var server = createServer(async (req, res) => {
   try {
     if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, errorPayload(new DomainError("errors.loopbackOnly")));
     const path = new URL(req.url, origin).pathname;
-    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.9" });
+    if (path === "/health" && req.method === "GET") return send(res, 200, { name: "ai-todos", version: "0.1.10" });
     if (path.startsWith("/internal/")) {
       if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, errorPayload(new DomainError("errors.unauthorized")));
       if (path === "/internal/ping") return send(res, 200, { ok: true });
