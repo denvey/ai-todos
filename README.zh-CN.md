@@ -10,6 +10,16 @@
 
 Todos 将会话状态和任务进度集中到一个看板，方便你查看全局进展，找到需要处理的事项，无需逐个打开会话。无法观察到的运行状态会标为未知。
 
+## 界面预览
+
+### 任务与会话看板
+
+![集中查看任务与 Codex 会话状态](docs/screenshots/board.png)
+
+### 时间线
+
+![通过时间线查看任务排期](docs/screenshots/timeline.png)
+
 ## 安装
 
 需要支持插件的 Codex CLI 和桌面端、Git，以及 **Node.js 24+**。确保 Codex 启动环境的 PATH 能找到 `node` 和 `codex`。

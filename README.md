@@ -10,6 +10,16 @@ When several Codex tasks run in parallel, you have to switch between chats to ch
 
 Todos brings chat activity and task progress together on one board, so you can see what needs your attention without opening each chat. When activity cannot be observed, it is shown as unknown.
 
+## Screenshots
+
+### Task and chat board
+
+![Task and Codex chat status in one board (Chinese interface)](docs/screenshots/board.png)
+
+### Timeline
+
+![Task schedules in the timeline (Chinese interface)](docs/screenshots/timeline.png)
+
 ## Install
 
 Requires a Codex CLI and desktop app with plugin support, Git, and **Node.js 24+**. Make sure `node` and `codex` are available on Codex's PATH.
