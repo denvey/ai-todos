@@ -30,7 +30,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const { codexAction } = await import('../src/codex.ts');
   const task = store.create('task', { title: '原任务', criteria: '原标准' });
   const prior = randomUUID(); store.syncCodexThreads([{ id: prior, title: '其他会话', preview: '', cwd: dir, updatedAt: '2026-10-10T00:00:00Z', state: 'idle' }]);
-  const action = { operation: 'prepare_task_session', id: task.id, revision: task.revision };
+  const action = { operation: 'prepare_task_session', id: task.id, revision: task.revision, locale: 'en' };
   const [first, duplicate] = await Promise.all([codexAction(store, action), codexAction(store, action)]);
   assert.deepEqual(first, duplicate);
   assert.equal(store.get('task', task.id).sessionId, first.sessionId);
@@ -42,7 +42,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.ok(JSON.parse(readFileSync(opened, 'utf8')).includes(`codex://threads/${first.sessionId}`));
   await codexAction(store, { operation: 'open_session', id: first.sessionId, prefillTask: true });
   const link = new URL(JSON.parse(readFileSync(opened, 'utf8')).find(value => value.startsWith('codex://')));
-  assert.equal(link.searchParams.get('prompt'), '# 原任务\n\n## 任务内容\n未填写\n\n## 验收标准\n原标准');
+  assert.equal(link.searchParams.get('prompt'), '原任务\n\n验收标准：\n原标准');
+  await codexAction(store, { operation: 'open_session', id: first.sessionId, prefillTask: true, locale: 'en' });
+  const englishLink = new URL(JSON.parse(readFileSync(opened, 'utf8')).find(value => value.startsWith('codex://')));
+  assert.equal(englishLink.searchParams.get('prompt'), '原任务\n\nAcceptance criteria:\n原标准');
   await assert.rejects(codexAction(store, { operation: 'open_session', id: prior, prefillTask: true }), /未关联任务/);
   await assert.rejects(codexAction(store, { operation: 'open_session', id: randomUUID() }), /请先同步/);
   const stale = store.create('task', { title: '旧版本' });
@@ -59,7 +62,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.equal(messages.filter(message => message.method === 'thread/start').length, 2);
   assert.equal(messages.filter(message => message.method === 'thread/archive').length, 1);
   const taskMessage = messages.find(message => message.method === 'thread/inject_items' && message.params.threadId === first.sessionId);
-  assert.equal(taskMessage.params.items[0].content[0].text, '# 原任务\n\n## 任务内容\n未填写\n\n## 验收标准\n原标准');
+  assert.equal(taskMessage.params.items[0].content[0].text, '原任务\n\nAcceptance criteria:\n原标准');
   assert.ok(messages.filter(message => message.method === 'thread/start').every(message => !('developerInstructions' in message.params)));
   assert.ok(!messages.some(message => message.method === 'turn/start'));
 });

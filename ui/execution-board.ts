@@ -1,14 +1,16 @@
+import { i18n } from '../src/i18n.ts';
+import type { TranslationKey } from '../src/i18n.ts';
 // Ported from Xinmo Desktop lib/execution-board.ts: task.state replaces workflowState,
 // task.ai replaces runtimeForTask, and session.id replaces the provider/session key.
 import type { Task, LiveSession } from '../src/types.ts';
 import { runtimeState } from '../src/runtime.ts';
 import { labels, runtimeLabel } from './format.ts';
 
-export const boardColumns = [
-  { id: 'unstarted', label: '未开始', stages: ['defining', 'ready', 'changes_requested'], dropTarget: 'ready' },
-  { id: 'executing', label: '进行中', stages: ['executing'], dropTarget: 'executing' },
-  { id: 'waiting_user', label: '需要你处理', stages: ['waiting_user'], dropTarget: 'waiting_user' },
-  { id: 'completed', label: '已完成', stages: ['completed'], dropTarget: 'completed' },
+export const boardColumns: { id: string; label: TranslationKey; stages: string[]; dropTarget: string }[] = [
+  { id: 'unstarted', label: "board.unstarted", stages: ['defining', 'ready', 'changes_requested'], dropTarget: 'ready' },
+  { id: 'executing', label: "board.executing", stages: ['executing'], dropTarget: 'executing' },
+  { id: 'waiting_user', label: "board.waitingUser", stages: ['waiting_user'], dropTarget: 'waiting_user' },
+  { id: 'completed', label: "board.completed", stages: ['completed'], dropTarget: 'completed' },
 ];
 export function executionColumnForTask(task: Pick<Task, 'state' | 'ai'>, runtime = task.ai) {
   if (task.state === 'cancelled') return 'cancelled';
@@ -30,12 +32,12 @@ export function executionColumnForTask(task: Pick<Task, 'state' | 'ai'>, runtime
 }
 export function taskStatus(task: Pick<Task, 'state' | 'ai' | 'sessionId'>) {
   const column = executionColumnForTask(task);
-  if (column === 'cancelled') return labels.cancelled;
-  if (column === 'completed') return '已完成';
-  if (['defining', 'ready', 'changes_requested'].includes(column)) return labels[column];
-  if (task.state === 'awaiting_acceptance') return labels.awaiting_acceptance;
-  if (task.state === 'executing' && !task.sessionId) return '执行中';
-  return runtimeLabel(task.ai) || labels[task.state];
+  if (column === 'cancelled') return i18n.t(labels.cancelled);
+  if (column === 'completed') return i18n.t('board.completed');
+  if (['defining', 'ready', 'changes_requested'].includes(column)) return i18n.t(labels[column]);
+  if (task.state === 'awaiting_acceptance') return i18n.t(labels.awaiting_acceptance);
+  if (task.state === 'executing' && !task.sessionId) return i18n.t('state.manualExecuting');
+  return runtimeLabel(task.ai) || i18n.t(labels[task.state]);
 }
 export function executionColumnForSession(session: Pick<LiveSession, 'state' | 'confirmedAt'>) {
   const state = runtimeState(session.state);
@@ -58,15 +60,15 @@ export function visibleExecutionSessions(sessions: LiveSession[], tasks: Task[])
 }
 export function boardDropDecision(task: Pick<Task, 'state' | 'ai' | 'sessionId'>, target: string): { action?: 'start' | 'request_changes'; reason?: string } {
   const source = executionColumnForTask(task), runtime = runtimeState(task.ai?.state);
-  if (task.sessionId && target === 'executing') return { reason: '请打开关联的 AI 会话继续执行' };
-  if (task.sessionId && source === 'executing') return { reason: '请在原 AI 会话中中断或继续' };
-  if (target === 'completed') return { reason: '不能通过拖拽制造完成或验收；请完成真实人工验收' };
-  if (source === target) return { reason: '任务已经在这一列' };
+  if (task.sessionId && target === 'executing') return { reason: i18n.t("board.resumeLinked") };
+  if (task.sessionId && source === 'executing') return { reason: i18n.t("board.interruptLinked") };
+  if (target === 'completed') return { reason: i18n.t("board.noDragAccept") };
+  if (source === target) return { reason: i18n.t("board.sameColumn") };
   if (target === 'executing' && ['ready', 'changes_requested'].includes(source)) return { action: 'start' };
   if (source === 'waiting_user' && target === 'ready') {
-    if (['waiting_approval', 'waiting_input'].includes(runtime)) return { reason: '请先处理 AI 的审批或输入请求，再决定是否退回修改' };
-    if (task.state !== 'awaiting_acceptance') return { reason: '任务尚未明确提交验收，请先在原会话继续或提交交付结果' };
+    if (['waiting_approval', 'waiting_input'].includes(runtime)) return { reason: i18n.t("board.resolveRequest") };
+    if (task.state !== 'awaiting_acceptance') return { reason: i18n.t("board.submitFirst") };
     return { action: 'request_changes' };
   }
-  return { reason: '请通过任务详情推进当前阶段' };
+  return { reason: i18n.t("board.useDetails") };
 }

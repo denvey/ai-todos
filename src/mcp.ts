@@ -5,16 +5,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
-import { commandSchema, sessionConfirmSchema } from './domain.ts';
+import { commandSchema, sessionConfirmSchema, errorPayload } from './domain.ts';
 import { codexActionSchema } from './codex.ts';
 import { ensureService, service } from './service-client.ts';
 import { origin } from './paths.ts';
 await ensureService();
 const icons = [{ src: `data:image/png;base64,${readFileSync(new URL('../assets/icon.png', import.meta.url)).toString('base64')}`, mimeType: 'image/png' }];
-const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.6', icons });
+const server = new McpServer({ name: 'ai-todos', title: 'Todos', version: '0.1.7', icons });
 const uri = 'ui://ai-todos/app.html';
 const result = (value: Record<string, unknown>): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
-const guarded = <T,>(fn: (args: T) => Promise<Record<string, unknown>>) => async (args: T): Promise<CallToolResult> => { try { return result(await fn(args)); } catch (error) { return { isError: true, content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }] }; } };
+const guarded = <T,>(fn: (args: T) => Promise<Record<string, unknown>>) => async (args: T): Promise<CallToolResult> => { try { return result(await fn(args)); } catch (error) { const payload = errorPayload(error); return { isError: true, content: [{ type: 'text', text: String(payload.error) }], structuredContent: payload }; } };
 const openToolConfig = {
   icons,
   title: '任务', description: 'Open the local ai-todos task, OKR, plan, focus and delivery workspace. If this host cannot render MCP Apps, open browserUrl in its browser.',

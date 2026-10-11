@@ -3,8 +3,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import enErrors from 'zod/v4/locales/en.js';
+import zhErrors from 'zod/v4/locales/zh-CN.js';
 import type { Kind, EntityData, Entity, Task, Focus, Settings, Session, LiveSession, Snapshot, TimeRecord, TaskEvent, CodexProject, CodexThread, Command } from './types.ts';
 import { runtimeState } from './runtime.ts';
+import { i18n, isTranslationKey, languages } from './i18n.ts';
+import type { TranslationKey } from './i18n.ts';
 
 const text = z.string().trim().min(1).max(300);
 const note = z.string().max(20000);
@@ -22,7 +26,7 @@ export const schemas = {
 };
 const kinds = z.enum(Object.keys(schemas) as [Kind, ...Kind[]]);
 const revision = z.number().int().positive();
-export const settingsSchema = z.object({ reminders: z.boolean(), followUpMinutes: z.number().int().min(0).max(10080), reviewTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), timezone: z.string().refine(v => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } }, 'Invalid timezone') }).strict();
+export const settingsSchema = z.object({ reminders: z.boolean(), followUpMinutes: z.number().int().min(0).max(10080), reviewTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(), timezone: z.string().refine(v => { try { new Intl.DateTimeFormat('en', { timeZone: v }); return true; } catch { return false; } }, "errors.invalidTimezone") }).strict();
 export const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('create'), kind: kinds, data: z.record(z.string(), z.unknown()), requestId: id, planDate: z.iso.date().optional() }).strict(),
   z.object({ action: z.literal('create_tasks'), data: z.array(schemas.task).min(1).max(20), requestId: id, planDate: z.iso.date() }).strict(),
@@ -41,9 +45,30 @@ const reviewSchema = z.object({ id, revision, decision: z.enum(['accept', 'rejec
 export const sessionConfirmSchema = z.object({ id, observedAt: date, event: z.string().min(1).max(200), turnId: z.string().max(200).nullable(), catalogUpdatedAt: date.nullable(), confirmed: z.literal(true) }).strict();
 export class DomainError extends Error {
   declare status: number;
-  constructor(message: string, status = 400) { super(message); this.status = status; }
+  declare code: TranslationKey;
+  declare params: Record<string, string | number>;
+  constructor(code: TranslationKey, status = 400, params: Record<string, string | number> = {}) { super(i18n.t(code, { ...params, lng: 'zh-CN' })); this.status = status; this.code = code; this.params = params; }
 }
-function requireThat(condition: unknown, message: string, status = 400): asserts condition { if (!condition) throw new DomainError(message, status); }
+export function errorPayload(error: unknown): Record<string, unknown> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof z.ZodError) {
+    const messages = Object.fromEntries(Object.keys(languages).map(locale => {
+      const localeError = locale === 'zh-CN' ? zhErrors().localeError : enErrors().localeError;
+      const issues = error.issues.map(issue => {
+        const localized = isTranslationKey(issue.message) ? i18n.t(issue.message, { lng: locale }) : localeError({ ...issue, input: undefined });
+        return { ...issue, message: typeof localized === 'string' ? localized : localized?.message ?? issue.message };
+      });
+      return [locale, z.prettifyError(new z.ZodError(issues))];
+    }));
+    return { error: messages['zh-CN'], messages };
+  }
+  if (error instanceof Error) {
+    if ('code' in error && isTranslationKey(error.code)) return { error: message, code: error.code, params: 'params' in error ? error.params : {} };
+    if ('messages' in error) return { error: message, messages: error.messages };
+  }
+  return { error: message };
+}
+function requireThat(condition: unknown, code: TranslationKey, status = 400, params: Record<string, string | number> = {}): asserts condition { if (!condition) throw new DomainError(code, status, params); }
 export function elapsed(focus: Focus, now = Date.now()) {
   return focus.elapsedMs + (focus.startedAt ? Math.max(0, now - Date.parse(focus.startedAt)) : 0);
 }
@@ -72,9 +97,9 @@ export class Store {
   all<K extends Kind>(kind: K): Entity<K>[] { return this.db.prepare('SELECT body FROM entities WHERE kind=? ORDER BY rowid').all(kind).map(r => JSON.parse(r.body as string)); }
   get<K extends Kind>(kind: K, entityId: string): Entity<K> {
     const row = this.db.prepare('SELECT body FROM entities WHERE kind=? AND id=?').get(kind, entityId);
-    requireThat(row, `${kind} 不存在`, 404); return JSON.parse(row.body as string);
+    requireThat(row, 'errors.notFound', 404, { kind }); return JSON.parse(row.body as string);
   }
-  check(item: { revision: number }, expected: number) { requireThat(item.revision === expected, '数据已更新。请重新打开并审阅后重试。', 409); }
+  check(item: { revision: number }, expected: number) { requireThat(item.revision === expected, "errors.staleRevision", 409); }
   save<K extends Kind>(kind: K, item: Entity<K>): Entity<K> { this.db.prepare('INSERT OR REPLACE INTO entities VALUES (?,?,?)').run(kind, item.id, JSON.stringify(item)); return item; }
   meta<T>(key: string, fallback: T): T { const row = this.db.prepare('SELECT body FROM meta WHERE key=?').get(key); return row ? JSON.parse(row.body as string) : fallback; }
   setMeta<T>(key: string, value: T): T { this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value)); return value; }
@@ -108,8 +133,8 @@ export class Store {
   validate<K extends Kind>(kind: K, input: unknown): EntityData<K> {
     const data = schemas[kind].parse(input) as EntityData<Kind>;
     if ('plannedStart' in data) {
-      requireThat(Boolean(data.plannedStart) === Boolean(data.plannedEnd), '排期必须同时填写开始和结束时间');
-      if (data.plannedStart) requireThat(Date.parse(data.plannedEnd!) > Date.parse(data.plannedStart), '结束时间必须晚于开始时间');
+      requireThat(Boolean(data.plannedStart) === Boolean(data.plannedEnd), "errors.schedulePair");
+      if (data.plannedStart) requireThat(Date.parse(data.plannedEnd!) > Date.parse(data.plannedStart), "errors.scheduleOrder");
     }
     if (kind === 'task') {
       const task = data as EntityData<'task'>;
@@ -119,11 +144,11 @@ export class Store {
     if (kind === 'keyResult') {
       const result = data as EntityData<'keyResult'>;
       this.get('objective', result.objectiveId);
-      requireThat(result.target !== result.baseline, 'KR 目标值必须与起始值不同');
+      requireThat(result.target !== result.baseline, "errors.krTarget");
     }
     if (kind === 'plan') {
       const plan = data as EntityData<'plan'>;
-      requireThat(new Set(plan.taskIds).size === plan.taskIds.length, '计划中不能重复添加任务');
+      requireThat(new Set(plan.taskIds).size === plan.taskIds.length, "errors.duplicatePlanTask");
       plan.taskIds.forEach(taskId => this.get('task', taskId));
     }
     return data as EntityData<K>;
@@ -136,7 +161,7 @@ export class Store {
     return item;
   }
   update<K extends Kind>(kind: K, item: Entity<K>, input: Record<string, unknown>): Entity<K> {
-    if (kind === 'task') requireThat(!['accepted', 'awaiting_acceptance', 'cancelled'].includes((item as Task).state), '请先退回修改或重新打开任务，再编辑内容');
+    if (kind === 'task') requireThat(!['accepted', 'awaiting_acceptance', 'cancelled'].includes((item as Task).state), "errors.taskLocked");
     const existing = Object.fromEntries(Object.keys(schemas[kind].shape).map(k => [k, (item as unknown as Record<string, unknown>)[k]]));
     const data = this.validate(kind, { ...existing, ...input });
     const result = this.save(kind, { ...item, ...data, revision: item.revision + 1, updatedAt: this.at() });
@@ -191,19 +216,19 @@ export class Store {
     const c = commandSchema.parse(raw);
     return this.transaction(() => {
       if (c.action === 'create' || c.action === 'create_tasks' || c.action === 'promote') {
-        if (c.action === 'create') requireThat(!c.planDate || c.kind === 'task', '只有任务可以加入今日计划');
+        if (c.action === 'create') requireThat(!c.planDate || c.kind === 'task', "errors.onlyTaskToday");
         const previous = this.db.prepare('SELECT body FROM requests WHERE id=?').get(c.requestId);
         const fingerprint = JSON.stringify(c.action === 'create' ? { kind: c.kind, data: c.data, ...(c.planDate ? { planDate: c.planDate } : {}) } : { ...c, requestId: undefined });
         const kind = c.action === 'create' ? c.kind : 'task';
         if (previous) {
           const saved = JSON.parse(previous.body as string);
-          requireThat(saved.fingerprint === fingerprint, '同一 requestId 不能用于不同创建请求', 409);
+          requireThat(saved.fingerprint === fingerprint, "errors.requestReused", 409);
           return c.action === 'create_tasks' ? { tasks: saved.entityIds.map((entityId: string) => this.get(kind, entityId)) } : this.get(kind, saved.entityId);
         }
         let captured: Entity<'inbox'> | undefined;
         if (c.action === 'promote') {
           captured = this.get('inbox', c.id); this.check(captured, c.revision);
-          requireThat(!captured.archived, '请先恢复已归档的想法');
+          requireThat(!captured.archived, "errors.restoreIdea");
         }
         const items = (c.action === 'create_tasks' ? c.data : [c.data]).map(data => this.create(kind, data, captured ? { capture: { id: captured.id, title: captured.title, capturedAt: captured.createdAt } } : {}));
         if (c.planDate) this.addToDay(c.planDate, items.map(item => item.id));
@@ -213,7 +238,7 @@ export class Store {
       }
       if (c.action === 'daily_plan') {
         const plans = this.dayPlans(c.date);
-        requireThat(c.plans.length === plans.length && new Set(c.plans.map(plan => plan.id)).size === plans.length && plans.every(plan => c.plans.some(read => read.id === plan.id && read.revision === plan.revision)), '今日计划已更新。请关闭并重新打开安排今天后重试。', 409);
+        requireThat(c.plans.length === plans.length && new Set(c.plans.map(plan => plan.id)).size === plans.length && plans.every(plan => c.plans.some(read => read.id === plan.id && read.revision === plan.revision)), "errors.stalePlan", 409);
         this.validate('plan', { title: '今日计划', date: c.date, taskIds: c.taskIds, note: c.note });
         const selected = new Set(c.taskIds), covered = new Set(plans.flatMap(plan => plan.taskIds));
         if (!plans.length) return { plans: [this.create('plan', { title: '今日计划', date: c.date, taskIds: c.taskIds, note: c.note })] };
@@ -226,17 +251,17 @@ export class Store {
       }
       if (c.action === 'update') {
         const item = this.get(c.kind, c.id); this.check(item, c.revision);
-        if ('codex' in item && item.codex && 'title' in c.data) requireThat(c.data.title === item.title, '项目名称由 Codex 维护，请在 Codex 中修改后同步。');
+        if ('codex' in item && item.codex && 'title' in c.data) requireThat(c.data.title === item.title, "errors.projectName");
         return this.update(c.kind, item, c.data);
       }
       if (c.action === 'delete') {
         const item = this.get(c.kind, c.id); this.check(item, c.revision);
         const referenced = this.all('task').some(t => t.projectId === c.id || t.keyResultId === c.id)
           || this.all('keyResult').some(k => k.objectiveId === c.id) || this.all('plan').some(p => p.taskIds.includes(c.id));
-        requireThat(!referenced, '请先移除相关任务、KR 或计划引用');
+        requireThat(!referenced, "errors.references");
         if (c.kind === 'task') {
-          requireThat((item as Task).state === 'defining' && !(item as Task).sessionId && !this.meta<TimeRecord[]>('timeRecords', []).some(r => r.taskId === c.id) && this.focus().taskId !== c.id, '有执行或计时记录的任务请取消，保留审计记录');
-          requireThat(this.taskHistory(c.id).every(e => ['created', 'updated'].includes(e.type)), '已有工作流记录的任务请取消，保留审计记录');
+          requireThat((item as Task).state === 'defining' && !(item as Task).sessionId && !this.meta<TimeRecord[]>('timeRecords', []).some(r => r.taskId === c.id) && this.focus().taskId !== c.id, "errors.taskRecords");
+          requireThat(this.taskHistory(c.id).every(e => ['created', 'updated'].includes(e.type)), "errors.workflowRecords");
           this.db.prepare('DELETE FROM events WHERE task_id=?').run(c.id);
         }
         this.db.prepare('DELETE FROM entities WHERE id=?').run(c.id); return { deleted: c.id };
@@ -247,34 +272,34 @@ export class Store {
       }
       if (c.action === 'ack') {
         const row = this.db.prepare('SELECT body FROM notices WHERE id=?').get(c.id);
-        requireThat(row, '提醒不存在', 404);
+        requireThat(row, "errors.noticeMissing", 404);
         const notice = { ...JSON.parse(row.body as string), read: true };
         this.db.prepare('UPDATE notices SET body=? WHERE id=?').run(JSON.stringify(notice), c.id); return notice;
       }
       const task = this.get('task', c.id); this.check(task, c.revision);
       if (c.action === 'bind') {
-        requireThat(['defining', 'ready', 'changes_requested'].includes(task.state), '仅定义、就绪或待修改任务可绑定会话');
-        if (task.sessionId && task.sessionId !== c.sessionId) requireThat(authority === 'human', '重新绑定必须由人在界面操作');
+        requireThat(['defining', 'ready', 'changes_requested'].includes(task.state), "errors.bindState");
+        if (task.sessionId && task.sessionId !== c.sessionId) requireThat(authority === 'human', "errors.humanRebind");
         if (c.sessionId) {
-          requireThat(this.sessions().some(s => s.id === c.sessionId && (s.source === 'codex-hook' || s.catalogVisible)), '请先同步 Codex 会话或启用可信插件 hooks');
-          requireThat(!this.all('task').some(t => t.id !== task.id && t.sessionId === c.sessionId && t.state !== 'cancelled'), '该会话已绑定任务，请继续使用原任务');
+          requireThat(this.sessions().some(s => s.id === c.sessionId && (s.source === 'codex-hook' || s.catalogVisible)), "errors.trustedSession");
+          requireThat(!this.all('task').some(t => t.id !== task.id && t.sessionId === c.sessionId && t.state !== 'cancelled'), "errors.sessionBound");
         }
         task.sessionId = c.sessionId;
       }
       if (c.action === 'transition') {
         const allowed: Partial<Record<Task["state"], string[]>> = { defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['ready', 'executing', 'cancelled'], cancelled: ['defining'], accepted: ['defining'] };
-        requireThat(allowed[task.state]?.includes(c.state), `不能从 ${task.state} 变为 ${c.state}`);
-        if (task.state === 'accepted') requireThat(authority === 'human', '重新打开已验收任务必须由人在界面操作');
-        if (c.state === 'ready') requireThat(task.criteria.trim(), '请先填写验收标准');
-        if (c.state === 'executing' && authority === 'model') requireThat(task.sessionId, 'AI 执行前必须绑定可信会话');
-        if (c.state === 'cancelled') requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', '请先结束此任务的专注计时');
+        requireThat(allowed[task.state]?.includes(c.state), 'errors.transition', 400, { from: task.state, to: c.state });
+        if (task.state === 'accepted') requireThat(authority === 'human', "errors.humanReopen");
+        if (c.state === 'ready') requireThat(task.criteria.trim(), "errors.criteriaRequired");
+        if (c.state === 'executing' && authority === 'model') requireThat(task.sessionId, "errors.bindBeforeExecute");
+        if (c.state === 'cancelled') requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', "errors.finishFocus");
         task.state = c.state;
       }
       if (c.action === 'submit') {
-        requireThat(task.state === 'executing', '只有执行中的任务可提交交付');
+        requireThat(task.state === 'executing', "errors.submitState");
         for (const e of c.evidence) {
-          requireThat(/^(https?:\/\/|\/|[A-Za-z]:[\\/])/.test(e.uri) && !/[\r\n]/.test(e.uri), '证据必须是 HTTP(S) URL 或本地绝对路径');
-          if (/^https?:/.test(e.uri)) { const url = new URL(e.uri); requireThat(!url.username && !url.password, '证据 URL 不能包含凭据'); }
+          requireThat(/^(https?:\/\/|\/|[A-Za-z]:[\\/])/.test(e.uri) && !/[\r\n]/.test(e.uri), "errors.evidenceUri");
+          if (/^https?:/.test(e.uri)) { const url = new URL(e.uri); requireThat(!url.username && !url.password, "errors.evidenceCredentials"); }
         }
         task.state = 'awaiting_acceptance';
         task.delivery = { summary: c.summary, evidence: c.evidence, submittedAt: this.at() };
@@ -288,9 +313,9 @@ export class Store {
     const c = reviewSchema.parse(raw);
     return this.transaction(() => {
       const task = this.get('task', c.id); this.check(task, c.revision);
-      requireThat(task.state === 'awaiting_acceptance' && task.delivery?.evidence.length, '仅有交付证据的待验收任务可审阅');
-      if (c.decision === 'reject') requireThat(c.note.trim(), '请填写退回原因');
-      requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', '请先结束此任务的专注计时');
+      requireThat(task.state === 'awaiting_acceptance' && task.delivery?.evidence.length, "errors.reviewState");
+      if (c.decision === 'reject') requireThat(c.note.trim(), "errors.rejectReason");
+      requireThat(this.focus().taskId !== task.id || this.focus().status === 'idle', "errors.finishFocus");
       task.state = c.decision === 'accept' ? 'accepted' : 'changes_requested';
       task.revision++; task.updatedAt = this.at();
       task.review = { decision: c.decision, reviewer: c.reviewer, note: c.note, at: this.at(), reviewedRevision: c.revision };
@@ -301,11 +326,11 @@ export class Store {
     const c = sessionConfirmSchema.parse(raw);
     return this.transaction(() => {
       const row = this.db.prepare('SELECT body FROM sessions WHERE id=?').get(c.id);
-      requireThat(row, '会话不存在', 404);
+      requireThat(row, "errors.sessionMissing", 404);
       const session = JSON.parse(row.body as string);
-      requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, '会话已变化，请刷新并重新确认。', 409);
-      requireThat(['idle', 'completed'].includes(runtimeState(session.observedState)), '只有本轮结束或已结束的会话可以确认完成');
-      requireThat(!this.all('task').some(task => task.sessionId === c.id && task.state !== 'cancelled'), '已关联任务的会话请通过任务验收确认完成');
+      requireThat(session.observedAt === c.observedAt && session.event === c.event && (session.turnId ?? null) === c.turnId && (session.catalogUpdatedAt ?? null) === c.catalogUpdatedAt, "errors.staleSession", 409);
+      requireThat(['idle', 'completed'].includes(runtimeState(session.observedState)), "errors.confirmState");
+      requireThat(!this.all('task').some(task => task.sessionId === c.id && task.state !== 'cancelled'), "errors.taskAcceptance");
       if (!session.confirmedAt) {
         session.confirmedAt = this.at();
         this.db.prepare('UPDATE sessions SET body=? WHERE id=?').run(JSON.stringify(session), session.id);
@@ -317,15 +342,15 @@ export class Store {
     const f = this.focus(); this.check(f, c.revision);
     const at = this.at();
     if (c.operation === 'start') {
-      requireThat(f.status === 'idle', '请先结束当前专注');
+      requireThat(f.status === 'idle', "errors.finishCurrentFocus");
       const task = this.get('task', c.taskId!);
-      requireThat(!['accepted', 'cancelled'].includes(task.state), '已结束的任务不能计时');
+      requireThat(!['accepted', 'cancelled'].includes(task.state), "errors.endedTaskFocus");
       Object.assign(f, { taskId: task.id, status: 'running', startedAt: at, elapsedMs: 0, segments: [] });
     } else {
-      requireThat(f.status !== 'idle', '没有专注中的任务');
-      if (c.operation === 'resume') { requireThat(f.status === 'paused', '只有暂停中的专注可恢复'); f.status = 'running'; f.startedAt = at; }
+      requireThat(f.status !== 'idle', "errors.noFocus");
+      if (c.operation === 'resume') { requireThat(f.status === 'paused', "errors.resumeFocus"); f.status = 'running'; f.startedAt = at; }
       else {
-        if (c.operation === 'pause') requireThat(f.status === 'running', '只有运行中的专注可暂停');
+        if (c.operation === 'pause') requireThat(f.status === 'running', "errors.pauseFocus");
         if (f.startedAt) {
           f.segments.push({ start: f.startedAt, end: at, durationMs: Math.max(0, this.now() - Date.parse(f.startedAt)) });
           f.elapsedMs = elapsed(f, this.now()); f.startedAt = null;

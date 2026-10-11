@@ -4,11 +4,11 @@
 
 可独立运行的 Codex 桌面端任务与专注管理插件。自带本地 MCP 服务、完整 Web 应用和 SQLite 持久化存储，**不需要 Xinmo Desktop、心魔 Gateway、OpenClaw 或 NAS**。
 
-当前版本：`0.1.6`。代码、可安装插件包和本地应用均已实现。Codex 内置浏览器路径已实际运行；MCP Apps 资源及 `global` / `thread` 入口元数据已实现，用户当前 Codex 客户端已确认原生侧边栏入口和全屏工作台可用，会话面板的宿主渲染尚未确认，详见 [宿主支持与验证记录](docs/host-support.md)。
+当前版本：`0.1.7`。代码、可安装插件包和本地应用均已实现。Codex 内置浏览器路径已实际运行；MCP Apps 资源及 `global` / `thread` 入口元数据已实现，用户当前 Codex 客户端已确认原生侧边栏入口和全屏工作台可用，会话面板的宿主渲染尚未确认，详见 [宿主支持与验证记录](docs/host-support.md)。
 
 界面采用紧凑顶部页签，没有网页左侧栏。嵌入 MCP Apps 时使用宿主提供的颜色、字体、圆角与明暗主题；浏览器里使用系统字体和中性黑白样式。顶部页签属于应用自身，原生 Codex 组件和侧栏入口仍需客户端支持，不能用页面样式替代。
 
-界面使用 React，直接复用心魔的 Radix Select、Popover 和中文 DayPicker；四列看板、折叠卡片、任务详情、OKR 和专注布局从心魔组件适配。数据调用接到本项目服务，运行时不依赖心魔或 Tauri。对话框使用同一版本系列的 Radix Dialog，输入框和时间字段保留 HTML 控件。ext-apps SDK 提供宿主通信与主题接入，这些组件不属于 Codex 原生组件。详见 [组件复用范围](docs/ui-reuse.md)。
+界面使用 React，直接复用心魔的 Radix Select、Popover 和 DayPicker；四列看板、折叠卡片、任务详情、OKR 和专注布局从心魔组件适配。数据调用接到本项目服务，运行时不依赖心魔或 Tauri。对话框使用同一版本系列的 Radix Dialog，输入框和时间字段保留 HTML 控件。ext-apps SDK 提供宿主通信与主题接入，这些组件不属于 Codex 原生组件。详见 [组件复用范围](docs/ui-reuse.md)。
 
 ## 从 GitHub 安装到 Codex
 
@@ -68,6 +68,12 @@ codex mcp add ai-todos -- /absolute/path/to/node /absolute/path/to/ai-todos/src/
 或 Settings → MCP servers → Add server → STDIO，填写同样的 command / args。开启新会话后调用工具。只添加 MCP 不会安装技能和 hooks；要使用可信 AI 会话观察，请安装完整插件。两种连接方式选一种，避免同名工具重复。
 
 ## 使用
+
+### 界面语言
+
+设置页支持「跟随系统」「简体中文」「English」，切换立即生效并在当前浏览器或嵌入面板的本地存储中保存。自动模式优先使用 Codex 宿主语言，其次使用浏览器语言；不支持的语言和缺失翻译回退到英文。界面、状态、提示、日历、日期、数字、时长、提醒和应用生成的执行指令均随语言切换；任务标题、说明、证据及其他用户内容保留原文。语言选择不改变提醒时区。
+
+使用 `i18next` 和 `react-i18next`；资源随应用打包，运行时无需下载。翻译使用稳定语义键和完整句子，英文数量文案支持单复数。新增语言时，在 `src/locales/` 添加资源文件，在 `src/i18n.ts` 注册名称和资源，并在 `ui/i18n.ts` 注册相应日历 locale；服务端输入校验同时接入对应 Zod locale。业务组件无需增加语言分支。Codex 插件侧栏名称由宿主静态配置决定。
 
 ### 工作与排期
 

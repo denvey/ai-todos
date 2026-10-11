@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse, OutgoingHttpHeaders } from 'node:
 import { createServer } from 'node:http';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
-import { Store } from './domain.ts';
+import { Store, DomainError, errorPayload } from './domain.ts';
 import { codexAction } from './codex.ts';
 import { dbPath, dataDir, runtimePath, port, origin } from './paths.ts';
 
@@ -27,17 +27,17 @@ function send(res: ServerResponse, status: number, value: unknown, headers: Outg
 function same(a: unknown, b: string) { return typeof a === 'string' && a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b)); }
 async function body(req: IncomingMessage) {
   const chunks = []; let size = 0;
-  for await (const chunk of req) { size += chunk.length; if (size > 128000) throw Object.assign(new Error('请求过大'), { status: 413 }); chunks.push(chunk); }
-  if (!req.headers['content-type']?.startsWith('application/json')) throw Object.assign(new Error('需要 JSON 请求'), { status: 415 });
+  for await (const chunk of req) { size += chunk.length; if (size > 128000) throw new DomainError('errors.tooLarge', 413); chunks.push(chunk); }
+  if (!req.headers['content-type']?.startsWith('application/json')) throw new DomainError('errors.jsonRequired', 415);
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 const server = createServer(async (req, res) => {
   try {
-    if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, { error: '仅允许本机回环地址' });
+    if (req.headers.host !== `127.0.0.1:${port}`) return send(res, 403, errorPayload(new DomainError('errors.loopbackOnly')));
     const path = new URL(req.url!, origin).pathname;
-    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.6' });
+    if (path === '/health' && req.method === 'GET') return send(res, 200, { name: 'ai-todos', version: '0.1.7' });
     if (path.startsWith('/internal/')) {
-      if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, { error: 'Unauthorized' });
+      if (!same(req.headers.authorization, `Bearer ${token}`)) return send(res, 401, errorPayload(new DomainError('errors.unauthorized')));
       if (path === '/internal/ping') return send(res, 200, { ok: true });
       if (path === '/internal/state') return send(res, 200, store.snapshot());
       if (path === '/internal/task' && req.method === 'POST') {
@@ -47,9 +47,9 @@ const server = createServer(async (req, res) => {
       if (path === '/internal/codex' && req.method === 'POST') return send(res, 200, await codexAction(store, await body(req)));
       if (path === '/internal/session-confirm' && req.method === 'POST') return send(res, 200, store.confirmSession(await body(req)));
       if (path === '/internal/stop' && req.method === 'POST') { send(res, 200, { stopped: true }); setImmediate(shutdown); return; }
-      return send(res, 404, { error: 'Not found' });
+      return send(res, 404, errorPayload(new DomainError('errors.routeMissing')));
     }
-    if (req.headers['sec-fetch-site'] === 'cross-site' || (req.headers.origin && req.headers.origin !== origin)) return send(res, 403, { error: '跨站请求已拒绝' });
+    if (req.headers['sec-fetch-site'] === 'cross-site' || (req.headers.origin && req.headers.origin !== origin)) return send(res, 403, errorPayload(new DomainError('errors.crossSite')));
     if (path === '/' && req.method === 'GET') {
       const cookieId = randomBytes(24).toString('hex');
       sessions.set(cookieId, { csrf: randomBytes(24).toString('hex'), expires: Date.now() + 86400000 });
@@ -58,8 +58,8 @@ const server = createServer(async (req, res) => {
     if (path === '/favicon.ico') return send(res, 204, '');
     const cookieId = req.headers.cookie?.match(/(?:^|;\s*)ai_todos=([a-f0-9]+)(?:;|$)/)?.[1];
     const session = sessions.get(cookieId ?? '');
-    if (!session || session.expires < Date.now()) return send(res, 401, { error: '请重新打开 ai-todos' });
-    if (req.method === 'POST' && (req.headers.origin !== origin || !same(req.headers['x-csrf-token'], session.csrf))) return send(res, 403, { error: '无效的界面请求' });
+    if (!session || session.expires < Date.now()) return send(res, 401, errorPayload(new DomainError('errors.reopenApp')));
+    if (req.method === 'POST' && (req.headers.origin !== origin || !same(req.headers['x-csrf-token'], session.csrf))) return send(res, 403, errorPayload(new DomainError('errors.invalidUiRequest')));
     if (path === '/api/state' && req.method === 'GET') return send(res, 200, { ...store.snapshot(), csrf: session.csrf });
     if (path === '/api/task' && req.method === 'POST') {
       const input = await body(req); return send(res, 200, { task: store.get('task', input.id), history: store.taskHistory(input.id) });
@@ -69,20 +69,20 @@ const server = createServer(async (req, res) => {
     if (path === '/api/session-confirm' && req.method === 'POST') return send(res, 200, store.confirmSession(await body(req)));
     if (path === '/api/review-ticket' && req.method === 'POST') {
       const { id, revision } = await body(req); const task = store.get('task', id); store.check(task, revision);
-      if (task.state !== 'awaiting_acceptance') return send(res, 400, { error: '任务尚未提交交付' });
+      if (task.state !== 'awaiting_acceptance') return send(res, 400, errorPayload(new DomainError('errors.deliveryRequired')));
       const ticket = randomBytes(24).toString('hex');
       reviews.set(ticket, { cookieId: cookieId!, id, revision, expires: Date.now() + 1800000 });
       return send(res, 200, { ticket, task });
     }
     if (path === '/api/review' && req.method === 'POST') {
       const input = await body(req); const ticket = reviews.get(input.ticket);
-      if (!ticket || ticket.cookieId !== cookieId || ticket.id !== input.id || ticket.revision !== input.revision || ticket.expires < Date.now()) return send(res, 409, { error: '审阅已过期，请重新打开交付证据' });
+      if (!ticket || ticket.cookieId !== cookieId || ticket.id !== input.id || ticket.revision !== input.revision || ticket.expires < Date.now()) return send(res, 409, errorPayload(new DomainError('errors.expiredReview')));
       const { ticket: ignored, ...review } = input;
       const result = store.review(review); reviews.delete(input.ticket);
       return send(res, 200, result);
     }
-    return send(res, 404, { error: 'Not found' });
-  } catch (error) { send(res, error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : 400, { error: error instanceof Error ? error.message : String(error) }); }
+    return send(res, 404, errorPayload(new DomainError('errors.routeMissing')));
+  } catch (error) { send(res, error instanceof Error && 'status' in error && typeof error.status === 'number' ? error.status : 400, errorPayload(error)); }
 });
 const timer = setInterval(() => {
   try { store.tick(); } catch (error) { console.error('Reminder scheduler:', error instanceof Error ? error.message : String(error)); }

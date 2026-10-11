@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { dataDir, runtimePath, origin } from './paths.ts';
 import pkg from '../package.json' with { type: 'json' };
 import type { ServiceRuntime } from './types.ts';
+import { i18n } from './i18n.ts';
 let runtime: ServiceRuntime;
 async function connect() {
   try {
@@ -33,7 +34,8 @@ export async function ensureService() {
     await new Promise(resolve => setTimeout(resolve, 100));
     if (await connect()) return runtime;
   }
-  throw new Error(`本地服务启动失败。请查看 ${join(dataDir, 'service.log')}，确认端口 ${origin} 未被其他应用占用。`);
+  const params = { path: join(dataDir, 'service.log'), origin };
+  throw Object.assign(new Error(i18n.t('errors.serviceStart', { ...params, lng: 'zh-CN' })), { code: 'errors.serviceStart', params });
 }
 export async function service<T = Record<string, unknown>>(path: string, value?: unknown): Promise<T> {
   if (!runtime) await ensureService();
@@ -43,5 +45,5 @@ export async function service<T = Record<string, unknown>>(path: string, value?:
   });
   let response = await request();
   if (response.status === 401) { await ensureService(); response = await request(); }
-  const result = await response.json(); if (!response.ok) throw new Error(result.error); return result;
+  const result = await response.json(); if (!response.ok) throw Object.assign(new Error(result.error), result); return result;
 }

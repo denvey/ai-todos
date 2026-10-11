@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+import { getLocale, calendarLocales } from '../i18n.ts';
 // Reused from Xinmo Desktop components/FormControls.tsx; see docs/ui-reuse.md.
 import { useEffect, useId, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
@@ -11,7 +13,6 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { DayFlag, DayPicker, SelectionState, UI } from "react-day-picker";
-import { zhCN } from "react-day-picker/locale";
 
 const EMPTY_SELECT_VALUE = "__xinmo_empty_value__";
 
@@ -148,6 +149,7 @@ export function DatePickerField({
   disabled?: boolean;
   type?: "date" | "datetime-local";
 }) {
+  const { t } = useTranslation();
   const labelId = useId();
   const withTime = type === "datetime-local";
   const selectedDate = dateValueToDate(withTime ? value.split("T")[0] : value);
@@ -195,7 +197,7 @@ export function DatePickerField({
             disabled={disabled}
           >
             <CalendarDays className="date-picker__icon" size={15} aria-hidden="true" />
-            <span>{selectedDate ? `${formatDisplayDate(selectedDate)}${withTime ? ` ${value.split("T")[1]}` : ""}` : withTime ? "选择日期和时间" : "选择日期"}</span>
+            <span>{selectedDate ? `${formatDisplayDate(selectedDate)}${withTime ? ` ${value.split("T")[1]}` : ""}` : withTime ? t("time.selectDateTime") : t("time.selectDate")}</span>
             <ChevronDown className="form-control-trigger__chevron" size={15} aria-hidden="true" />
           </button>
         </Popover.Trigger>
@@ -209,7 +211,13 @@ export function DatePickerField({
           >
             <DayPicker
               mode="single"
-              locale={zhCN}
+              locale={calendarLocales[getLocale()]}
+              labels={{
+                labelNav: () => t('time.calendarNavigation'),
+                labelPrevious: () => t('time.previousMonth'),
+                labelNext: () => t('time.nextMonth'),
+                labelDayButton: (date, modifiers) => t(modifiers.today ? modifiers.selected ? 'time.todaySelected' : 'time.todayDate' : modifiers.selected ? 'time.selectedDate' : 'time.dateLabel', { date: new Intl.DateTimeFormat(getLocale(), { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(date) }),
+              }}
               month={month}
               onMonthChange={setMonth}
               selected={draftDate}
@@ -250,7 +258,7 @@ export function DatePickerField({
                 },
               }}
             />
-            {withTime && <label className="date-time-picker__time" htmlFor={`${labelId}-time`}><span>时间</span><input id={`${labelId}-time`} type="time" step={60} aria-label={`${label}时间`} disabled={disabled || !draftDate} value={draftTime} onChange={event => selectTime(event.target.value)} onInput={event => selectTime(event.currentTarget.value)} /></label>}
+            {withTime && <label className="date-time-picker__time" htmlFor={`${labelId}-time`}><span>{t("time.label")}</span><input id={`${labelId}-time`} type="time" step={60} aria-label={t("time.field", { label: label })} disabled={disabled || !draftDate} value={draftTime} onChange={event => selectTime(event.target.value)} onInput={event => selectTime(event.currentTarget.value)} /></label>}
             <div className="date-picker__actions">
               <button
                 type="button"
@@ -261,7 +269,7 @@ export function DatePickerField({
                   setOpen(false);
                 }}
               >
-                清除
+                {t('time.clear')}
               </button>
               <button type="button" className="date-picker__action is-primary" disabled={disabled} onClick={() => {
                 const now = new Date();
@@ -270,9 +278,9 @@ export function DatePickerField({
                   setDraft(`${dateToDateValue(now)}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`);
                 } else selectDate(now);
               }}>
-                {withTime ? "现在" : "今天"}
+                {withTime ? t("time.now") : t("time.today")}
               </button>
-              {withTime && <button type="button" className="date-picker__action is-primary" disabled={disabled || !draftDate || !draftTime} onClick={() => { onValueChange(draft); setOpen(false); }}>确定</button>}
+              {withTime && <button type="button" className="date-picker__action is-primary" disabled={disabled || !draftDate || !draftTime} onClick={() => { onValueChange(draft); setOpen(false); }}>{t("common.confirm")}</button>}
             </div>
           </Popover.Content>
         </Popover.Portal>
@@ -300,7 +308,7 @@ function dateToDateValue(date: Date): string {
 }
 
 function formatDisplayDate(date: Date): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(getLocale(), {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
