@@ -3,8 +3,8 @@ import { i18n, getLocale, applyHostLocale, getLanguagePreference, setLanguagePre
 import type { LanguagePreference } from './i18n.ts';
 import type { TranslationKey, Locale } from '../src/i18n.ts';
 import type { ReactNode } from 'react';
-import type { Task, TaskDraft, Project, KeyResult, Plan, InboxItem, Entity, Kind, Snapshot, Settings as ReminderSettings, TaskEvent, DefinitionSuggestion, CaptureSuggestion, DefinitionField, Delivery as TaskDelivery, LiveSession, CommandInput, TransitionState } from '../src/types.ts';
-import type { Modal, Decision, FocusOperation, RescheduleEdge } from './types.ts';
+import type { Task, TaskDraft, Project, KeyResult, Plan, InboxItem, Entity, Kind, Snapshot, Settings as ReminderSettings, TaskEvent, DefinitionSuggestion, CaptureSuggestion, DefinitionField, Delivery as TaskDelivery, Session, CommandInput, TransitionState } from '../src/types.ts';
+import type { Modal, Decision, FocusOperation, RescheduleEdge, TaskCallbacks } from './types.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
@@ -36,6 +36,7 @@ function api(path: 'codex', data: { operation: 'prepare_task_session'; id: strin
 function api(path: 'codex', data: { operation: 'sync_projects' | 'sync_threads' }): Promise<SyncResult>;
 function api(path: 'codex', data: { operation: 'refine'; draft: TaskDraft; field?: DefinitionField }): Promise<DefinitionSuggestion>;
 function api(path: 'codex', data: { operation: 'capture_refine'; draft: TaskDraft }): Promise<CaptureSuggestion>;
+function api(path: 'session-confirm', data: Omit<Parameters<TaskCallbacks['onConfirmSession']>[0], 'catalogUpdatedAt'> & { catalogUpdatedAt: string | null; confirmed: true }): Promise<Session>;
 function api(path: string, data: unknown): Promise<unknown>;
 async function api(path: string, data?: unknown): Promise<unknown> {
   if (embedded) {
@@ -204,10 +205,17 @@ function Workspace() {
     const result = await syncThreads(); toast(t("session.synced", { count: result.count, value: result.transport === 'history' ? t("connection.historyOnly") : '' }));
   });
   const openSession = (id: string) => run(() => openCodexSession(id));
-  const confirmSession = (session: Pick<LiveSession, 'id' | 'observedAt' | 'event' | 'turnId' | 'catalogUpdatedAt'>) => run(async () => {
-    await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
-    await refresh(true);
-  }, t("session.confirmed"));
+  const confirmSession: TaskCallbacks['onConfirmSession'] = async session => {
+    try {
+      const confirmed = await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
+      // Let an earlier snapshot finish so it cannot overwrite this confirmation.
+      if (refreshing.current) await refreshing.current.catch(() => {});
+      const current = snapshotRef.current!;
+      const next = { ...current, sessions: current.sessions.map(item => item.id === confirmed.id && item.observedAt === confirmed.observedAt && item.event === confirmed.event && (item.turnId ?? null) === (confirmed.turnId ?? null) && (item.catalogUpdatedAt ?? null) === (confirmed.catalogUpdatedAt ?? null) ? { ...item, confirmedAt: confirmed.confirmedAt } : item) };
+      snapshotRef.current = next; setSnapshot(next);
+      toast(t("session.confirmed")); return true;
+    } catch (reason) { toast(reason instanceof Error ? reason.message : String(reason)); return false; }
+  };
   const createToday = (draft?: TaskDraft, onCreated?: () => void) => open({ type: 'task', draft, onCreated, planDate: localDay(new Date()), requestId: crypto.randomUUID() });
   const addToday = (data: TaskDraft[], requestId: string) => run(() => mutate({ action: 'create_tasks', data, requestId, planDate: localDay(new Date()) }), data.length > 1 ? t("today.splitAdded", { count: data.length }) : t("today.added"));
   const captureInbox = (title: string, requestId: string) => run(() => mutate({ action: 'create', kind: 'inbox', data: { title }, requestId }), t("inbox.saved"));
