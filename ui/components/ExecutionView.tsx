@@ -76,10 +76,18 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState<Record<string, number>>({});
+  const confirming = useRef(new Set<string>());
+  const [confirmingSessions, setConfirmingSessions] = useState<string[]>([]);
+  const confirmSession: TaskCallbacks['onConfirmSession'] = async session => {
+    if (busy || confirming.current.has(session.id)) return false;
+    confirming.current.add(session.id); setConfirmingSessions([...confirming.current]);
+    try { return await onConfirmSession(session); }
+    finally { confirming.current.delete(session.id); setConfirmingSessions([...confirming.current]); }
+  };
   const endDrag = () => setDropTarget(null);
   const renderTask = (task: Task) => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
-  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession}
+  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy || confirmingSessions.includes(session.id)} onOpenSession={onOpenSession} onConfirmSession={confirmSession}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos-session', JSON.stringify({ id: value.id, observedAt: value.observedAt, event: value.event, turnId: value.turnId, catalogUpdatedAt: value.catalogUpdatedAt })); }} onDragEnd={endDrag} />;
   const completedItems = [
     ...tasks.filter(task => executionColumnForTask(task) === 'completed').map(task => ({ kind: 'task' as const, value: task, at: task.review?.at || task.updatedAt })),
@@ -102,7 +110,7 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
               const value = JSON.parse(event.dataTransfer.getData('application/ai-todos-session'));
               const session = sessions.find(item => item.id === value.id);
               if (column.id !== 'completed' || !session || !canConfirmAiSession(session, allTasks)) throw new Error(t("session.invalidConfirmation"));
-              onConfirmSession(value); return;
+              confirmSession(value); return;
             }
             if (!event.dataTransfer.types.includes('application/ai-todos')) return;
             const value = JSON.parse(event.dataTransfer.getData('application/ai-todos'));
