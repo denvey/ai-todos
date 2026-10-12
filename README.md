@@ -1,6 +1,6 @@
 # Todos
 
-English | [Simplified Chinese](README.zh-CN.md)
+English | [中文](README.zh-CN.md)
 
 A task and focus workspace for Codex. Manage tasks, projects, OKRs, and daily plans, track focus time, and review AI deliveries in one place. Data is stored locally in SQLite.
 
