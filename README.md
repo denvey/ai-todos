@@ -110,3 +110,5 @@ The database is stored at `~/.ai-todos/ai-todos.sqlite`. The service listens onl
 | `AI_TODOS_PORT` | `16943` | Local HTTP port |
 
 Use the same settings for the service, MCP, and hooks. Stop the service and ensure hooks have stopped writing before backing up or restoring the database.
+
+Community friend link: [Linux DO](https://linux.do/)
