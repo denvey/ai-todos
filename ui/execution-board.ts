@@ -42,7 +42,7 @@ export function taskStatus(task: Pick<Task, 'state' | 'ai' | 'sessionId'>) {
   if (task.state === 'executing' && !task.sessionId) return i18n.t('state.manualExecuting');
   return runtimeLabel(task.ai) || i18n.t(labels[task.state]);
 }
-export function taskNextStep(task: Pick<Task, 'state' | 'ai' | 'sessionId'>): { action: 'complete' | 'review' | 'session'; label: TranslationKey; hint: TranslationKey } | null {
+export function taskNextStep(task: Pick<Task, 'state' | 'ai' | 'sessionId'>): { action: 'start' | 'complete' | 'review' | 'session'; label: TranslationKey; hint: TranslationKey } | null {
   if (['accepted', 'cancelled'].includes(task.state)) return null;
   if (task.state === 'awaiting_acceptance') return { action: 'review', label: 'review.action', hint: 'task.nextReview' };
   const runtime = runtimeState(task.ai?.state);
@@ -51,6 +51,9 @@ export function taskNextStep(task: Pick<Task, 'state' | 'ai' | 'sessionId'>): { 
     if (runtime === 'waiting_input') return { action: 'session', label: 'task.reply', hint: 'task.nextInput' };
     if (runtime === 'failed' || runtime === 'interrupted') return { action: 'session', label: 'task.resumeSession', hint: 'task.nextResume' };
     return { action: 'session', label: 'task.viewProgress', hint: 'task.nextRunning' };
+  }
+  if (!task.sessionId && !task.ai && ['defining', 'ready', 'changes_requested'].includes(task.state)) {
+    return { action: 'start', label: 'task.startWork', hint: 'task.nextStart' };
   }
   return { action: 'complete', label: 'session.confirm', hint: 'task.nextComplete' };
 }

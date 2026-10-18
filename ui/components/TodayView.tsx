@@ -92,15 +92,14 @@ export function TodayView({ snapshot, busy, visible, elapsedMs, onAdd, onCapture
   const progress = <div className="day-band"><div className="day-summary"><div className="day-summary__main"><strong>{t("today.progress")}</strong><span className="day-summary__meter"><i style={{ width: `${todayTasks.length ? accepted / todayTasks.length * 100 : 0}%` }} /></span><span className="day-summary__count">{accepted} / {todayTasks.length}</span></div>{plans[0]?.note && <p className="day-summary__message">{plans[0].note}</p>}</div></div>;
   const row = (task: Task) => <TaskRow key={task.id} task={task} focus={snapshot.focus} busy={busy} onOpenTask={onOpenTask} onTaskAction={onTaskAction} onFocusTask={onFocusTask} />;
   return <section className="today-view" hidden={!visible}>
-    {snapshot.focus.status === 'idle' && progress}
-    <FocusCard focus={snapshot.focus} busy={busy} task={fallback} elapsedMs={elapsedMs} onStart={() => onFocusTask(fallback!)} onPause={() => onFocusOp('pause')} onResume={() => onFocusOp('resume')} onEnd={() => onFocusOp('finish')} onNeedTask={() => quickRef.current?.focus()} />
-    {snapshot.focus.status !== 'idle' && progress}
     <section className="card task-section" aria-labelledby="tasks-heading"><div className="section-heading"><h2 id="tasks-heading">{t("today.tasks")}</h2><div className="section-heading__actions"><button className="text-button" disabled={busy} onClick={onInbox}><Inbox size={14} />{t("nav.inbox")}{inboxCount ? ` ${inboxCount}` : ''}</button><span className="count-label">{active.filter(task => task.state === 'awaiting_acceptance').length > 0 ? t("today.awaitingCount", { value: active.filter(task => task.state === 'awaiting_acceptance').length }) : ''}{t("today.incompleteCount", { count: active.length })}</span></div></div>
       <QuickCapture ref={quickRef} busy={busy} visible={visible} onAdd={onAdd} onCapture={onCapture} onRefine={onRefine} onCreateTask={onCreateTask} />
+      {progress}
       <div className="task-list">{active.map(row)}{!active.length && <div className="empty-state"><strong>{unplanned.length ? t("today.notPlanned") : t("today.noTasks")}</strong><span>{unplanned.length ? t("today.poolHint", { count: unplanned.length }) : inboxCount ? t("today.inboxHint") : t("today.addHint")}</span></div>}</div>
       {!!finished.length && <details className="completed-group" open={completedOpen} onToggle={event => setCompletedOpen(event.currentTarget.open)}><summary>{t("today.acceptedCount", { count: accepted })}{finished.length > accepted ? t("today.cancelledCount", { value: finished.length - accepted }) : ''}</summary>{finished.map(row)}</details>}
       <button className="task-pool-entry" type="button" onClick={onPlan} disabled={busy} aria-label={unplanned.length ? t("today.chooseTasks") : t("today.arrange")}><ListTodo size={17} /><span><strong>{unplanned.length ? t("today.chooseTasks") : t("today.arrange")}</strong><small>{unplanned.length ? t("today.poolCount", { count: unplanned.length }) : t("today.adjust")}</small></span><span className="task-pool-entry__action">{t("today.arrangeAction")}<ChevronRight size={15} /></span></button>
     </section>
+    <FocusCard focus={snapshot.focus} busy={busy} task={fallback} elapsedMs={elapsedMs} onStart={() => onFocusTask(fallback!)} onPause={() => onFocusOp('pause')} onResume={() => onFocusOp('resume')} onEnd={() => onFocusOp('finish')} onNeedTask={() => quickRef.current?.focus()} />
   </section>;
 }
 

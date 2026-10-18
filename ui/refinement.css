@@ -1,0 +1,509 @@
+/* A quieter, more legible workspace layer over the host-aware component styles. */
+:root {
+  --fallback-bg: #f6f7f8;
+  --fallback-subtle: #f0f2f4;
+  --fallback-ink: #20242b;
+  --fallback-muted: #626b76;
+  --fallback-line: #e2e6ea;
+  --fallback-danger: #b54747;
+  --radius: var(--border-radius-md, 8px);
+  --r-lg: var(--border-radius-lg, 12px);
+  --fs-caption: 11px;
+  --fs-footnote: 12px;
+  --fs-body: 14px;
+  --shadow-card: 0 1px 2px rgb(19 29 40 / 5%);
+  --state-running: #3e6fb9;
+  --state-waiting: #9c5719;
+  --state-done: #347452;
+}
+
+:root[data-theme="dark"] {
+  --fallback-bg: #181a1d;
+  --fallback-subtle: #202327;
+  --fallback-ink: #eceef1;
+  --fallback-muted: #a3aab4;
+  --fallback-line: #30353b;
+  --fallback-danger: #ff928b;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 18%);
+  --state-running: #9dbdf8;
+  --state-waiting: #eab575;
+  --state-done: #82c49f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --fallback-bg: #181a1d;
+    --fallback-subtle: #202327;
+    --fallback-ink: #eceef1;
+    --fallback-muted: #a3aab4;
+    --fallback-line: #30353b;
+    --fallback-danger: #ff928b;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 18%);
+    --state-running: #9dbdf8;
+    --state-waiting: #eab575;
+    --state-done: #82c49f;
+  }
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body {
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease,
+    box-shadow 140ms ease, transform 140ms ease;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.main {
+  padding: 0 24px 24px;
+}
+
+.main.is-board {
+  background: var(--bg);
+}
+
+.nav {
+  gap: 6px;
+  padding: 12px 0 10px;
+  border-color: color-mix(in oklch, var(--line) 72%, transparent);
+}
+
+.nav button {
+  position: relative;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.nav button:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+
+.nav button.active {
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+  color: var(--ink);
+}
+
+.page-header {
+  min-height: 44px;
+  margin: 18px 0 16px;
+}
+
+.page-header h1 {
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.page-header > .row:last-child {
+  gap: 6px;
+}
+
+.page-header > .row:last-child > button:not(.primary) {
+  color: var(--muted);
+}
+
+button {
+  border-radius: 8px;
+}
+
+button.primary {
+  box-shadow: 0 1px 2px rgb(19 29 40 / 12%);
+}
+
+input,
+textarea,
+.form-control-trigger {
+  border-radius: 8px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+.form-control-trigger:focus-visible {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--blue) 16%, transparent);
+}
+
+.card {
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.execution-toolbar {
+  gap: 14px;
+  padding: 0 1px 2px;
+}
+
+.execution-toolbar > .row {
+  gap: 12px;
+}
+
+.execution-toolbar .muted {
+  font-size: 12px;
+}
+
+.segmented-control {
+  padding: 3px;
+  border-color: color-mix(in oklch, var(--line) 78%, transparent);
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--subtle) 76%, transparent);
+}
+
+.segmented-control button {
+  min-height: 30px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.segmented-control button.is-active {
+  box-shadow: 0 1px 3px rgb(20 30 40 / 12%);
+}
+
+.execution-filters .task-search input {
+  height: 34px;
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.execution-board {
+  gap: 12px;
+  padding: 2px 1px 10px;
+}
+
+.execution-column {
+  border: 0;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--subtle) 72%, transparent);
+}
+
+.execution-column > header {
+  min-height: 44px;
+  padding: 10px 12px 8px;
+  border: 0;
+  background: transparent;
+}
+
+.execution-column > header strong {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.execution-column > header em {
+  min-width: 22px;
+  padding: 2px 7px;
+  border: 1px solid color-mix(in oklch, var(--line) 72%, transparent);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.execution-column.column-executing > header i {
+  background: #4777c5;
+  box-shadow: 0 0 0 3px color-mix(in oklch, #4777c5 14%, transparent);
+}
+
+.execution-column.column-waiting_user > header i {
+  background: #cf7c30;
+}
+
+.execution-column.column-completed > header i {
+  background: #4c9471;
+}
+
+.execution-column__tasks {
+  gap: 8px;
+  padding: 4px 8px 10px;
+  scrollbar-gutter: stable;
+}
+
+.execution-column__empty {
+  min-height: 54px;
+  border: 1px dashed color-mix(in oklch, var(--line) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--surface) 42%, transparent);
+  font-size: 12px;
+}
+
+.execution-card {
+  gap: 8px;
+  padding: 11px;
+  border-color: color-mix(in oklch, var(--line) 82%, transparent);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.execution-card:hover {
+  border-color: color-mix(in oklch, var(--accent) 28%, var(--line));
+  box-shadow: 0 3px 9px rgb(20 30 40 / 8%);
+  transform: translateY(-1px);
+}
+
+.execution-card__title > strong,
+.execution-card__summary > strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.execution-card__expand > svg,
+.execution-card__summary > svg {
+  width: 15px;
+  height: 15px;
+}
+
+.execution-card__actions button,
+.codex-request button,
+.execution-inline-action button {
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.execution-card__actions button.is-next-action {
+  border-color: color-mix(in oklch, var(--accent) 14%, var(--line));
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+  color: var(--accent-strong);
+}
+
+.execution-card__actions button.is-next-action:hover {
+  background: color-mix(in oklch, var(--accent) 13%, var(--surface));
+}
+
+.execution-status,
+.execution-dependency {
+  min-height: 21px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.execution-status.status-running,
+.execution-status.status-queued,
+.execution-status.status-executing {
+  background: color-mix(in oklch, var(--state-running) 13%, transparent);
+  color: var(--state-running);
+}
+
+.execution-status.status-waiting_approval,
+.execution-status.status-waiting_input,
+.execution-status.status-awaiting_acceptance,
+.execution-status.status-idle,
+.execution-status.status-completed {
+  background: color-mix(in oklch, var(--state-waiting) 13%, transparent);
+  color: var(--state-waiting);
+}
+
+.execution-status.status-accepted {
+  background: color-mix(in oklch, var(--state-done) 13%, transparent);
+  color: var(--state-done);
+}
+
+.timeline-toolbar > span {
+  color: var(--muted);
+}
+
+.timeline-window-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.timeline-window-actions > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.timeline-window-actions > button {
+  min-height: 27px;
+  padding: 0 7px;
+  border-color: transparent;
+  background: color-mix(in oklch, var(--accent) 7%, var(--surface));
+  color: var(--accent-strong);
+  font-size: 11px;
+}
+
+.timeline-window-actions > button:hover {
+  background: color-mix(in oklch, var(--accent) 13%, var(--surface));
+}
+
+.timeline-table {
+  grid-template-columns: 176px minmax(0, 1fr);
+  border-color: color-mix(in oklch, var(--line) 82%, transparent);
+  border-radius: 10px;
+}
+
+.timeline-label-column {
+  border-right-color: color-mix(in oklch, var(--line) 82%, transparent);
+  box-shadow: 3px 0 9px rgb(0 0 0 / 3%);
+}
+
+.timeline-label-heading,
+.timeline-axis {
+  height: 44px;
+  border-color: color-mix(in oklch, var(--line) 82%, transparent);
+  background: var(--subtle);
+}
+
+.timeline-task-label {
+  height: 54px;
+  border-color: color-mix(in oklch, var(--line) 72%, transparent);
+}
+
+.timeline-task-label button {
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.timeline-task-label small {
+  font-size: 10.5px;
+}
+
+.timeline-axis > span,
+.timeline-row {
+  border-color: color-mix(in oklch, var(--line) 76%, transparent);
+}
+
+.timeline-axis strong {
+  font-size: 10.5px;
+}
+
+.timeline-row {
+  height: 54px;
+}
+
+.timeline-bar {
+  top: 13px;
+  height: 28px;
+  border-color: color-mix(in oklch, #4777c5 34%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklch, #4777c5 13%, var(--surface));
+  color: var(--ink);
+  font-size: 10.5px;
+}
+
+.timeline-bar:hover {
+  background: color-mix(in oklch, #4777c5 20%, var(--surface));
+}
+
+.execution-unscheduled {
+  gap: 10px;
+  padding: 12px;
+  border-color: color-mix(in oklch, var(--line) 82%, transparent);
+  border-radius: 10px;
+}
+
+.execution-unscheduled > header strong {
+  font-size: 13px;
+}
+
+.focus-bar {
+  bottom: 12px;
+  min-height: 54px;
+  padding: 9px 14px;
+  border-color: color-mix(in oklch, var(--line) 76%, transparent);
+  border-radius: 12px;
+  box-shadow: 0 5px 20px rgb(16 24 32 / 10%);
+  backdrop-filter: blur(16px);
+}
+
+.focus-bar strong {
+  font-size: 16px;
+}
+
+.task-editor {
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgb(12 18 26 / 24%);
+}
+
+@media (max-width: 900px) {
+  .main {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .execution-column {
+    flex-basis: 260px;
+  }
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 0 12px 12px;
+  }
+
+  .nav {
+    padding-top: 8px;
+  }
+
+  .page-header {
+    margin: 14px 0 12px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .execution-view.is-board .execution-board {
+    display: flex;
+    grid-template-columns: none;
+    grid-template-rows: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .execution-view.is-board .execution-column {
+    flex: 0 0 min(84vw, 330px);
+    min-height: 0;
+  }
+
+  .timeline-table {
+    grid-template-columns: 138px minmax(0, 1fr);
+  }
+
+  .focus-bar {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    padding: 9px 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  input,
+  textarea,
+  .execution-card {
+    transition: none;
+  }
+
+  button:active:not(:disabled),
+  .execution-card:hover {
+    transform: none;
+  }
+}
