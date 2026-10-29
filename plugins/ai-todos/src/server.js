@@ -27687,7 +27687,7 @@ async function codexAction(store2, raw) {
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.14",
+  version: "0.1.15",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
