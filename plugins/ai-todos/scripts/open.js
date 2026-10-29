@@ -22,7 +22,7 @@ var origin = `http://127.0.0.1:${port}`;
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.15",
+  version: "0.1.16",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
@@ -64,7 +64,7 @@ var package_default = {
   }
 };
 
-// ../../../../Workspace/Coding/OpenSource/ai-todos/node_modules/i18next/dist/esm/i18next.js
+// node_modules/i18next/dist/esm/i18next.js
 var isString = (obj) => typeof obj === "string";
 var defer = () => {
   let res;
