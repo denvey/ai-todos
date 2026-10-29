@@ -71,7 +71,7 @@ Keep using the same plugin source, `ai-todos@ai-todos`. The hook settings may sh
 
 - **Home:** capture tasks and plan your day. Press Enter to add a task to today, or Option/Alt + Enter to save it to the inbox.
 - **Inbox:** collect ideas, preview AI suggestions, and turn ideas into tasks.
-- **Tasks:** define requirements and acceptance criteria, set priorities and schedules, and track progress on the board or timeline.
+- **Tasks:** optionally add a description and acceptance criteria, set priorities and schedules, and track progress on the board or timeline. Click **Confirm complete** to move a stopped task to **Completed** and close its dialog. Submitted deliveries keep their evidence review flow.
 - **Codex chats:** open a task's linked chat or create one with task details prefilled. Send the prompt in Codex when you are ready to continue.
 - **Projects and OKRs:** organize tasks by project and track objectives and key results.
 - **Focus:** start, pause, resume, and end a timer. An active timer keeps running through sleep or closing Codex until you pause or end it.
@@ -110,3 +110,5 @@ The database is stored at `~/.ai-todos/ai-todos.sqlite`. The service listens onl
 | `AI_TODOS_PORT` | `16943` | Local HTTP port |
 
 Use the same settings for the service, MCP, and hooks. Stop the service and ensure hooks have stopped writing before backing up or restoring the database.
+
+Community friend link: [Linux DO](https://linux.do/)

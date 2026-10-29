@@ -5,27 +5,26 @@ import type { CSSProperties, DragEvent, PointerEvent } from 'react';
 import type { Task, Project, LiveSession } from '../../src/types.ts';
 import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
 import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, Code2 } from 'lucide-react';
+import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2 } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
 import { runtimeState } from '../../src/runtime.ts';
-import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
+import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, taskNextStep, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
 export { boardColumns, sessionColumn };
 
 export function AiBadge({ task }: { task: Pick<Task, 'ai' | 'sessionId'> }) {
   const { t } = useTranslation();
   return <span className={`execution-status status-${runtimeState(task.ai?.state)}`} title={task.ai ? t("session.source", { value: task.ai.source === 'codex-hook' ? 'Codex hook' : t("session.api"), value2: fmt(task.ai.observedAt), event: task.ai.event }) : t("session.observeHint")}>
-    {task.sessionId ? runtimeLabel(task.ai || { state: 'unknown' }) : t("session.unlinked")}
+    {task.sessionId ? ['idle', 'completed'].includes(runtimeState(task.ai?.state)) ? t('runtime.turnEnded') : runtimeLabel(task.ai || { state: 'unknown' }) : t("session.unlinked")}
   </span>;
 }
 
-interface ExecutionCardProps extends Pick<TaskCallbacks, 'onOpenTask'>, Partial<Pick<TaskCallbacks, 'onOpenSession' | 'onReviewTask' | 'onOpenCodex'>> { task: Task; projects: Project[]; busy: boolean; onDragStart?: (event: DragEvent, task: Task) => void; onDragEnd?: () => void }
+interface ExecutionCardProps extends Pick<TaskCallbacks, 'onOpenTask'>, Partial<Pick<TaskCallbacks, 'onOpenSession' | 'onReviewTask' | 'onOpenCodex' | 'onCompleteTask'>> { task: Task; projects: Project[]; busy: boolean; onDragStart?: (event: DragEvent, task: Task) => void; onDragEnd?: () => void }
 
-export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onDragStart, onDragEnd }: ExecutionCardProps) {
+export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onCompleteTask, onDragStart, onDragEnd }: ExecutionCardProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const dragged = useRef(false);
-  const column = executionColumnForTask(task), status = taskStatus(task);
-  const handleRuntime = column === 'waiting_user' && ['waiting_approval', 'waiting_input', 'failed'].includes(runtimeState(task.ai?.state)) && task.state !== 'awaiting_acceptance' && onOpenSession;
+  const column = executionColumnForTask(task), status = taskStatus(task), next = taskNextStep(task);
   return <article className="execution-card execution-task-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
     onDragStart={event => { dragged.current = true; onDragStart?.(event, task); }}
     onDragEnd={() => { onDragEnd?.(); setTimeout(() => { dragged.current = false; }, 0); }}>
@@ -36,11 +35,12 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
       <div className="execution-card__buttons">
-        {(handleRuntime || ((task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex)) && <button type="button" disabled={busy} onClick={() => handleRuntime ? onOpenSession!(task.sessionId!) : onOpenCodex!(task)}><ExternalLink size={12} />{t("session.open")}</button>}
-        {task.state === 'awaiting_acceptance' && onReviewTask && <button type="button" disabled={busy} onClick={() => onReviewTask(task)}><ListTodo size={12} />{t("review.action")}</button>}
+        {next?.action !== 'session' && (task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><ExternalLink size={12} />{t("session.open")}</button>}
+        {next && <button type="button" disabled={busy} onClick={() => next.action === 'complete' && onCompleteTask ? onCompleteTask(task) : next.action === 'review' && onReviewTask ? onReviewTask(task) : next.action === 'session' && onOpenSession ? onOpenSession(task.sessionId!) : onOpenTask(task.id)}>{next.action === 'review' ? <ListTodo size={12} /> : next.action === 'session' ? <ExternalLink size={12} /> : <Check size={12} />}{t(next.label)}</button>}
       </div>
     </div>
     {(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <div className="execution-card__badges"><AiBadge task={task} /></div>}
+    {next && <small className="execution-card__next-hint">{t(next.hint)}</small>}
     <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
       <div className="execution-card__body">
         <span className="execution-card__topline"><span>{t("task.priorityLabel", { priority: t(priorityLabels[task.priority]) })}</span><span>r{task.revision}</span></span>
@@ -71,15 +71,44 @@ function SessionCard({ session, tasks, projects, busy, onOpenSession, onConfirmS
   </article>;
 }
 
-export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onOpenCodex, onTransition, onError }: Omit<TaskCallbacks, 'onReschedule'> & { tasks: Task[]; allTasks?: Task[]; sessions?: LiveSession[]; projects: Project[]; busy: boolean; onError: (message: string) => void }) {
+export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, busy, onOpenTask, onOpenSession, onConfirmSession, onReviewTask, onOpenCodex, onCompleteTask, onTransition, onError }: Omit<TaskCallbacks, 'onReschedule'> & { tasks: Task[]; allTasks?: Task[]; sessions?: LiveSession[]; projects: Project[]; busy: boolean; onError: (message: string) => void }) {
   const { t } = useTranslation();
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState<Record<string, number>>({});
+  const batchRunning = useRef(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const confirming = useRef(new Set<string>());
+  const [confirmingSessions, setConfirmingSessions] = useState<string[]>([]);
+  const confirmSession: TaskCallbacks['onConfirmSession'] = async session => {
+    if (busy || batchRunning.current || confirming.current.has(session.id)) return false;
+    confirming.current.add(session.id); setConfirmingSessions([...confirming.current]);
+    try { return await onConfirmSession(session); }
+    finally { confirming.current.delete(session.id); setConfirmingSessions([...confirming.current]); }
+  };
+  const confirmableSessions = sessions.filter(session => canConfirmAiSession(session, allTasks));
+  const confirmAllSessions = async () => {
+    if (busy || batchRunning.current || confirming.current.size || !confirmableSessions.length) return;
+    batchRunning.current = true;
+    const pending = [...confirmableSessions];
+    let succeeded = 0;
+    setBatchProgress({ done: 0, total: pending.length });
+    try {
+      for (const [index, session] of pending.entries()) {
+        try { if (await onConfirmSession(session, true)) succeeded++; }
+        catch { /* Keep processing the remaining sessions after an individual failure. */ }
+        setBatchProgress({ done: index + 1, total: pending.length });
+      }
+      onError(t("session.confirmAllResult", { succeeded, failed: pending.length - succeeded }));
+    } finally {
+      batchRunning.current = false;
+      setBatchProgress(null);
+    }
+  };
   const endDrag = () => setDropTarget(null);
-  const renderTask = (task: Task) => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex}
+  const renderTask = (task: Task) => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
-  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy} onOpenSession={onOpenSession} onConfirmSession={onConfirmSession}
+  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy || !!batchProgress || confirmingSessions.includes(session.id)} onOpenSession={onOpenSession} onConfirmSession={confirmSession}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos-session', JSON.stringify({ id: value.id, observedAt: value.observedAt, event: value.event, turnId: value.turnId, catalogUpdatedAt: value.catalogUpdatedAt })); }} onDragEnd={endDrag} />;
   const completedItems = [
     ...tasks.filter(task => executionColumnForTask(task) === 'completed').map(task => ({ kind: 'task' as const, value: task, at: task.review?.at || task.updatedAt })),
@@ -102,7 +131,7 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
               const value = JSON.parse(event.dataTransfer.getData('application/ai-todos-session'));
               const session = sessions.find(item => item.id === value.id);
               if (column.id !== 'completed' || !session || !canConfirmAiSession(session, allTasks)) throw new Error(t("session.invalidConfirmation"));
-              onConfirmSession(value); return;
+              confirmSession(value); return;
             }
             if (!event.dataTransfer.types.includes('application/ai-todos')) return;
             const value = JSON.parse(event.dataTransfer.getData('application/ai-todos'));
@@ -116,7 +145,8 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
             } else onTransition(task.id, value.revision, 'executing');
           } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
         }}>
-        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length })}{sessionItems.length > 0 && <> · {t("board.sessionCount", { count: sessionItems.length })}</>}</em></header>
+        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length })}{sessionItems.length > 0 && <> · {t("board.sessionCount", { count: sessionItems.length })}</>}</em>
+        {column.id === 'waiting_user' && (confirmableSessions.length > 0 || batchProgress) && <button type="button" className="execution-column__bulk" disabled={busy || !!batchProgress || confirmingSessions.length > 0} title={batchProgress ? t("session.confirmAllProgress", batchProgress) : `${t("session.confirmAll")}：${t("session.confirmAllHint")}`} aria-label={batchProgress ? t("session.confirmAllProgress", batchProgress) : t("session.confirmAll")} aria-live="polite" onClick={confirmAllSessions}>{batchProgress ? <LoaderCircle size={14} aria-hidden="true" /> : <CheckCheck size={14} aria-hidden="true" />}</button>}</header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={t("board.cards", { label: t(column.label) })}>
           {completed ? completedItems.slice(0, showCompletedHistory ? undefined : 5).map(item => item.kind === 'task' ? renderTask(item.value) : renderSession(item.value)) : <>{items.map(renderTask)}{sessionItems.slice(0, sessionLimits[column.id] || 50).map(renderSession)}</>}
           {!completed && sessionItems.length > (sessionLimits[column.id] || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, [column.id]: (current[column.id] || 50) + 50 }))}>{t("board.moreSessions", { count: sessionItems.length - (sessionLimits[column.id] || 50) })}</button>}
@@ -169,7 +199,7 @@ function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onResche
   </button>;
 }
 
-export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onReschedule }: Omit<TaskCallbacks, 'onTransition' | 'onConfirmSession'> & { tasks: Task[]; projects: Project[]; busy: boolean }) {
+export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onCompleteTask, onReschedule }: Omit<TaskCallbacks, 'onTransition' | 'onConfirmSession'> & { tasks: Task[]; projects: Project[]; busy: boolean }) {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<'day' | 'week' | 'month'>('day');
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
@@ -190,7 +220,7 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
         {!scheduled.length && <p className="empty-state">{t("timeline.empty")}</p>}
       </div></div>
     </div>
-    <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>{t("schedule.unscheduled")}</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} />)}</div>{!unscheduled.length && <p>{t("timeline.allScheduled")}</p>}</section>
+    <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>{t("schedule.unscheduled")}</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask} />)}</div>{!unscheduled.length && <p>{t("timeline.allScheduled")}</p>}</section>
     <p className="muted">{t("timeline.controls")}</p>
   </div>;
 }

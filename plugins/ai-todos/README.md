@@ -1,6 +1,6 @@
 # Todos
 
-English | [Simplified Chinese](README.zh-CN.md)
+English | [中文](README.zh-CN.md)
 
 A task and focus workspace for Codex. Manage tasks, projects, OKRs, and daily plans, track focus time, and review AI deliveries in one place. Data is stored locally in SQLite.
 
@@ -71,7 +71,7 @@ Keep using the same plugin source, `ai-todos@ai-todos`. The hook settings may sh
 
 - **Home:** capture tasks and plan your day. Press Enter to add a task to today, or Option/Alt + Enter to save it to the inbox.
 - **Inbox:** collect ideas, preview AI suggestions, and turn ideas into tasks.
-- **Tasks:** define requirements and acceptance criteria, set priorities and schedules, and track progress on the board or timeline.
+- **Tasks:** optionally add a description and acceptance criteria, set priorities and schedules, and track progress on the board or timeline. Click **Confirm complete** to move a stopped task to **Completed** and close its dialog. Submitted deliveries keep their evidence review flow.
 - **Codex chats:** open a task's linked chat or create one with task details prefilled. Send the prompt in Codex when you are ready to continue.
 - **Projects and OKRs:** organize tasks by project and track objectives and key results.
 - **Focus:** start, pause, resume, and end a timer. An active timer keeps running through sleep or closing Codex until you pause or end it.
@@ -94,6 +94,12 @@ npm run open
 
 This starts the local service and opens `http://127.0.0.1:16943`. The first workspace is empty. Run `npm run stop` from the checkout to stop the service.
 
+## Releases
+
+Every push to `main` runs the release workflow: it increments the patch version, builds the portable plugin with Node.js 24, commits the version and prebuilt plugin back to `main`, and publishes a `v<version>` GitHub Release with `.zip` and `.tar.gz` bundles and generated release notes. The release commit uses `GITHUB_TOKEN`, so it does not trigger another release run. Concurrent merges are released from the latest `main` checkout and may share one release.
+
+The workflow needs `contents: write`; repository rules must allow `github-actions[bot]` to push release commits to `main`. If another commit reaches `main` during the build, the atomic push fails without overwriting it; rerun the workflow. Rerunning a tagged release reuses its version and uploads the bundles again. You can also run **Release** manually from the Actions tab on `main`.
+
 ## Local data
 
 The database is stored at `~/.ai-todos/ai-todos.sqlite`. The service listens only on `127.0.0.1`. Uninstalling the plugin does not delete your data or stop the service.
@@ -104,3 +110,5 @@ The database is stored at `~/.ai-todos/ai-todos.sqlite`. The service listens onl
 | `AI_TODOS_PORT` | `16943` | Local HTTP port |
 
 Use the same settings for the service, MCP, and hooks. Stop the service and ensure hooks have stopped writing before backing up or restoring the database.
+
+Community friend link: [Linux DO](https://linux.do/)

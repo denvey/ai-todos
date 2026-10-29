@@ -3,12 +3,12 @@ import { i18n, getLocale, applyHostLocale, getLanguagePreference, setLanguagePre
 import type { LanguagePreference } from './i18n.ts';
 import type { TranslationKey, Locale } from '../src/i18n.ts';
 import type { ReactNode } from 'react';
-import type { Task, TaskDraft, Project, KeyResult, Plan, InboxItem, Entity, Kind, Snapshot, Settings as ReminderSettings, TaskEvent, DefinitionSuggestion, CaptureSuggestion, DefinitionField, Delivery as TaskDelivery, LiveSession, CommandInput, TransitionState } from '../src/types.ts';
-import type { Modal, Decision, FocusOperation, RescheduleEdge } from './types.ts';
+import type { Task, TaskDraft, Project, KeyResult, Plan, InboxItem, Entity, Kind, Snapshot, Settings as ReminderSettings, TaskEvent, DefinitionSuggestion, CaptureSuggestion, DefinitionField, Delivery as TaskDelivery, Session, CommandInput, TransitionState } from '../src/types.ts';
+import type { Modal, Decision, FocusOperation, RescheduleEdge, TaskCallbacks } from './types.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plus, RefreshCw, Search, Settings } from 'lucide-react';
+import { Maximize2, Plus, RefreshCw, Search, Settings } from 'lucide-react';
 import { DatePickerField, SelectField } from './components/FormControls.tsx';
 import { BoardView, ExecutionCard, TimelineView } from './components/ExecutionView.tsx';
 import { TaskEditor, EditorDialog, Field, ScheduleFields, Delivery } from './components/TaskEditor.tsx';
@@ -23,7 +23,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, { availableDisplayModes: ['inline', 'fullscreen'] }, { autoResize: true }) : null;
 const mainPages = { today: 'nav.today', work: 'nav.work', projects: 'nav.projects', okr: 'nav.okr' } as const;
 const pages: Record<string, TranslationKey> = { ...mainPages, inbox: 'nav.inbox', plans: 'nav.plans', settings: 'nav.settings' };
 const singular: Record<string, TranslationKey> = { task: 'entity.task', project: 'entity.project', objective: 'entity.objective', keyResult: 'entity.keyResult', plan: 'entity.plan' };
@@ -36,10 +36,11 @@ function api(path: 'codex', data: { operation: 'prepare_task_session'; id: strin
 function api(path: 'codex', data: { operation: 'sync_projects' | 'sync_threads' }): Promise<SyncResult>;
 function api(path: 'codex', data: { operation: 'refine'; draft: TaskDraft; field?: DefinitionField }): Promise<DefinitionSuggestion>;
 function api(path: 'codex', data: { operation: 'capture_refine'; draft: TaskDraft }): Promise<CaptureSuggestion>;
+function api(path: 'session-confirm', data: Omit<Parameters<TaskCallbacks['onConfirmSession']>[0], 'catalogUpdatedAt'> & { catalogUpdatedAt: string | null; confirmed: true }): Promise<Session>;
 function api(path: string, data: unknown): Promise<unknown>;
 async function api(path: string, data?: unknown): Promise<unknown> {
   if (embedded) {
-    const names: Record<string, string> = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex', 'session-confirm': 'ai_todos_confirm_session' };
+    const names: Record<string, string> = { state: 'ai_todos_snapshot', command: 'ai_todos_manage', task: 'ai_todos_task', codex: 'ai_todos_codex', 'session-confirm': 'ai_todos_confirm_session', 'task-complete': 'ai_todos_complete_task' };
     if (!names[path]) throw new Error(i18n.t("connection.localReview"));
     const result = await bridge!.callServerTool({ name: names[path], arguments: (path === 'command' ? { command: data } : path === 'codex' ? { action: data } : (data ?? {})) as Record<string, unknown> });
     if (result.isError) throw new Error(localizedError(result.structuredContent ?? { error: result.content?.find(item => item.type === 'text')?.text }));
@@ -138,6 +139,7 @@ function Workspace() {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connectionError, setConnectionError] = useState('');
+  const [hostContext, setHostContext] = useState<ReturnType<App['getHostContext']>>();
   const [threadTransport, setThreadTransport] = useState<string | null>(null);
   const [view, setView] = useState({ page: 'today', mode: 'board', project: '', search: '' });
   const [modal, setModal] = useState<Modal | null>(null);
@@ -165,6 +167,12 @@ function Workspace() {
     finally { busyRef.current = false; setBusy(false); }
   };
   const open = (value: Modal) => { setError(''); setModal({ ...value, key: crypto.randomUUID() }); };
+  const fullscreen = () => run(async () => {
+    const result = await bridge!.requestDisplayMode({ mode: 'fullscreen' });
+    console.info('[ai-todos] display mode request', { requested: 'fullscreen', actual: result.mode });
+    setHostContext({ ...bridge!.getHostContext(), displayMode: result.mode });
+    if (result.mode !== 'fullscreen') throw new Error(t('connection.fullscreenDenied'));
+  });
   const openTask = (id: string, returnTo?: Modal) => run(async () => { const detail = await api('task', { id }); open({ type: 'task', ...detail, returnTo }); });
   const openEntity = (kind: Kind, entity?: Entity | null, parent?: string) => open({ type: kind === 'task' ? 'task' : 'entity', kind, entity: entity ?? undefined, parent, requestId: crypto.randomUUID() });
   const deleteEntity = (kind: Kind, entity: Entity) => open({ type: 'delete', kind, entity, returnTo: modalRef.current?.returnTo });
@@ -204,10 +212,17 @@ function Workspace() {
     const result = await syncThreads(); toast(t("session.synced", { count: result.count, value: result.transport === 'history' ? t("connection.historyOnly") : '' }));
   });
   const openSession = (id: string) => run(() => openCodexSession(id));
-  const confirmSession = (session: Pick<LiveSession, 'id' | 'observedAt' | 'event' | 'turnId' | 'catalogUpdatedAt'>) => run(async () => {
-    await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
-    await refresh(true);
-  }, t("session.confirmed"));
+  const confirmSession: TaskCallbacks['onConfirmSession'] = async (session, silent = false) => {
+    try {
+      const confirmed = await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
+      // Let an earlier snapshot finish so it cannot overwrite this confirmation.
+      if (refreshing.current) await refreshing.current.catch(() => {});
+      const current = snapshotRef.current!;
+      const next = { ...current, sessions: current.sessions.map(item => item.id === confirmed.id && item.observedAt === confirmed.observedAt && item.event === confirmed.event && (item.turnId ?? null) === (confirmed.turnId ?? null) && (item.catalogUpdatedAt ?? null) === (confirmed.catalogUpdatedAt ?? null) ? { ...item, confirmedAt: confirmed.confirmedAt } : item) };
+      snapshotRef.current = next; setSnapshot(next);
+      if (!silent) toast(t("session.confirmed")); return true;
+    } catch (reason) { if (!silent) toast(reason instanceof Error ? reason.message : String(reason)); return false; }
+  };
   const createToday = (draft?: TaskDraft, onCreated?: () => void) => open({ type: 'task', draft, onCreated, planDate: localDay(new Date()), requestId: crypto.randomUUID() });
   const addToday = (data: TaskDraft[], requestId: string) => run(() => mutate({ action: 'create_tasks', data, requestId, planDate: localDay(new Date()) }), data.length > 1 ? t("today.splitAdded", { count: data.length }) : t("today.added"));
   const captureInbox = (title: string, requestId: string) => run(() => mutate({ action: 'create', kind: 'inbox', data: { title }, requestId }), t("inbox.saved"));
@@ -224,6 +239,10 @@ function Workspace() {
     return focus.taskId === task.id && focus.status !== 'idle' ? focusOp(focus.status === 'running' ? 'pause' : 'resume') : focusOp('start', task.id);
   };
   const taskAction = (task: Task) => ['accepted', 'cancelled'].includes(task.state) ? transition(task.id, task.revision, 'defining') : task.state === 'awaiting_acceptance' ? review(task) : openTask(task.id);
+  const completeTask = (task: Task) => run(async () => {
+    await api('task-complete', { id: task.id, revision: task.revision, confirmed: true });
+    await refresh(true);
+  }, t('task.completedByUser'), true);
 
   useEffect(() => {
     let stopped = false;
@@ -232,7 +251,11 @@ function Workspace() {
     const boot = async () => {
       try {
         if (embedded) {
-          const applyHostContext = (context: ReturnType<App["getHostContext"]>) => { if (context?.locale) applyHostLocale(context.locale); if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts); };
+          const applyHostContext = (context: ReturnType<App["getHostContext"]>) => {
+            setHostContext(bridge!.getHostContext());
+            if (context?.displayMode !== undefined || context?.availableDisplayModes !== undefined) console.info('[ai-todos] host display mode', { mode: bridge!.getHostContext()?.displayMode, available: bridge!.getHostContext()?.availableDisplayModes });
+            if (context?.locale) applyHostLocale(context.locale); if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts);
+          };
           bridge!.onhostcontextchanged = applyHostContext;
           bridge!.ontoolresult = result => { if (result.structuredContent && typeof result.structuredContent === 'object' && 'tasks' in result.structuredContent) refresh(true).catch(reason => toast((reason instanceof Error ? reason.message : String(reason)))); };
           await bridge!.connect(); applyHostContext(bridge!.getHostContext());
@@ -281,7 +304,7 @@ function Workspace() {
         onSave={data => run(async () => { await mutate(task ? { action: 'update', kind: 'task', id: task.id, revision: task.revision, data } : { action: 'create', kind: 'task', data, requestId: modal.requestId!, ...(modal.planDate ? { planDate: modal.planDate } : {}) }); modal.onCreated?.(); }, modal.planDate ? t("today.added") : t("task.saved"), true)}
         onTransition={state => transition(task!.id, task.revision, state, true)}
         onBind={sessionId => run(async () => { await mutate({ action: 'bind', id: task.id, revision: task.revision, sessionId }); const detail = await api('task', { id: task.id }); open({ type: 'task', ...detail, returnTo: modal.returnTo }); }, t("ai.linkSaved"))}
-        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onOpenCodex={() => openCodex(task)} onDelete={() => deleteEntity('task', task)} />;
+        onSubmitDelivery={() => open({ type: 'delivery', task, returnTo: modal.returnTo })} onReview={() => review(task)} onComplete={() => completeTask(task)} onFocus={() => focusOp('start', task.id)} onPrompt={() => prompt(task.id)} onOpenCodex={() => openCodex(task)} onDelete={() => deleteEntity('task', task)} />;
     } else if (modal.type === 'daily_plan') {
       modalTitle = t("today.arrange"); modalDescription = t("today.dateHint", { date: modal.date });
       modalBody = <DailyPlanEditor snapshot={snapshot} plans={modal.plans!} initial={modal.draft} busy={busy} onCreateTask={() => createToday()} onInbox={openInbox}
@@ -309,7 +332,7 @@ function Workspace() {
   }
   return <><main className={`main ${view.page === 'work' && view.mode === 'board' ? 'is-board' : ''} ${snapshot.focus.status !== 'idle' ? 'has-focus' : ''}`}>
     <nav className="nav" aria-label={t("nav.label")}>{Object.entries(mainPages).map(([page, label]) => <button key={page} disabled={busy} aria-current={mainPage === page ? 'page' : undefined} className={mainPage === page ? 'active' : ''} onClick={() => setViewValue('page', page)}>{t(label)}</button>)}<button className={`nav-settings ${view.page === 'settings' ? 'active' : ''}`} disabled={busy} aria-current={view.page === 'settings' ? 'page' : undefined} onClick={() => setViewValue('page', 'settings')}><Settings size={16} aria-hidden="true" />{t("nav.settings")}</button></nav>
-    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>{t("nav.today")}</button><span className="muted" aria-hidden="true">/</span></>}<h1>{t(pages[view.page])}</h1></div><div className="row">{embedded && <button className="quiet small" disabled={busy} onClick={() => run(() => openLocal())}>{t("connection.openLocal")}</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>{t("nav.plans")}</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />{t("project.sync")}</button>}<button className="quiet small" disabled={busy} onClick={view.page === 'work' ? syncWorkspace : () => run(() => refresh(true))}><RefreshCw size={14} />{t("common.refresh")}</button>{newKind && <button className="primary" disabled={busy} onClick={() => openEntity(newKind)}><Plus size={15} />{t("entity.new", { value: t(singular[newKind]) })}</button>}</div></header>
+    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>{t("nav.today")}</button><span className="muted" aria-hidden="true">/</span></>}<h1>{t(pages[view.page])}</h1></div><div className="row">{hostContext?.availableDisplayModes?.includes('fullscreen') && hostContext.displayMode !== 'fullscreen' && <button className="quiet small" disabled={busy} onClick={fullscreen}><Maximize2 size={14} aria-hidden="true" />{t('connection.fullscreen')}</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>{t("nav.plans")}</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />{t("project.sync")}</button>}<button className="quiet small" disabled={busy} onClick={view.page === 'work' ? syncWorkspace : () => run(() => refresh(true))}><RefreshCw size={14} />{t("common.refresh")}</button>{newKind && <button className="primary" disabled={busy} onClick={() => openEntity(newKind)}><Plus size={15} />{t("entity.new", { value: t(singular[newKind]) })}</button>}</div></header>
     {connectionError && <p className="error" role="alert">{t("connection.unavailable")}{connectionError}</p>}
     {view.page === 'today' && <section className="card home-focus" aria-labelledby="focus-stats-title"><div className="row spaced"><h2 id="focus-stats-title">{t("focus.stats")}</h2><DatePickerField label={t("focus.statsDate")} value={statsDate} onValueChange={setStatsDate} /></div><div className="summary"><div><p>{statsDate === localDay(new Date()) ? t("focus.todayTime") : t("focus.dateTime")}</p><div className="number">{hours(dayRows.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>{t("focus.totalTime")}</p><div className="number">{hours(totals.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>{t("focus.recordCount")}</p><div className="number">{number(snapshot.timeRecords.length)}</div></div></div>
       <details><summary>{t("focus.details")}</summary>
@@ -322,7 +345,7 @@ function Workspace() {
     <InboxView items={snapshot.inbox} visible={view.page === 'inbox'} busy={busy} onClose={() => setViewValue('page', 'today')} onCapture={captureInbox} onRefine={refineCapture} onPromote={promoteInbox} onArchive={(item, archived) => run(() => mutate({ action: 'update', kind: 'inbox', id: item.id, revision: item.revision, data: { archived } }), archived ? t("inbox.archived") : t("inbox.restored"))} />
     {view.page === 'work' && <section className={`execution-view ${view.mode === 'board' ? 'is-board' : ''}`}><div className="execution-toolbar"><div className="row"><div className="segmented-control">{[['board', t("board.mode")], ['timeline', t("timeline.mode")]].map(([mode, label]) => <button key={mode} className={view.mode === mode ? 'is-active' : ''} aria-pressed={view.mode === mode} onClick={() => setViewValue('mode', mode)}>{label}</button>)}</div><span className="muted">{t("board.summary", { taskCount: t("board.taskCount", { count: filtered.length }), sessionCount: t("board.sessionCount", { count: boardSessionCount }) })}</span></div><div className="execution-filters"><SelectField label={t("entity.project")} value={view.project} onValueChange={value => setViewValue('project', value)} disabled={!snapshot.projects.length} groups={[{ options: [{ value: '', label: t("project.all") }, ...snapshot.projects.map(project => ({ value: project.id, label: project.title }))] }]} /><label className="task-search"><Search size={14} aria-hidden="true" /><input type="search" aria-label={t("board.search")} placeholder={t("board.searchPlaceholder")} value={view.search} onChange={event => setViewValue('search', event.target.value)} /></label></div></div>
       {threadTransport === 'history' && !snapshot.sessions.some(session => session.source === 'codex-hook') && <p className="note" role="status">{t("connection.hookSetup")}</p>}
-      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenCodex={openCodex} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onOpenCodex={openCodex} onReschedule={reschedule} />}
+      {view.mode === 'board' ? <BoardView tasks={filtered} allTasks={snapshot.tasks} sessions={filteredSessions} onOpenSession={openSession} onConfirmSession={confirmSession} onReviewTask={review} onCompleteTask={completeTask} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenCodex={openCodex} onTransition={transition} onError={toast} /> : <TimelineView tasks={filtered} projects={snapshot.projects} busy={busy} onOpenTask={openTask} onOpenSession={openSession} onReviewTask={review} onCompleteTask={completeTask} onOpenCodex={openCodex} onReschedule={reschedule} />}
       {filtered.some(task => task.state === 'cancelled') && <details><summary className="muted">{t("task.cancelledCount", { count: filtered.filter(task => task.state === 'cancelled').length })}</summary><div className="grid">{filtered.filter(task => task.state === 'cancelled').map(task => <ExecutionCard key={task.id} task={task} projects={snapshot.projects} busy={busy} onOpenTask={openTask} />)}</div></details>}
     </section>}
     {view.page === 'projects' && <div className="grid">{snapshot.projects.map(project => {

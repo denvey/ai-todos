@@ -21964,6 +21964,11 @@ var loadLanguages = instance.loadLanguages;
 
 // src/locales/en.ts
 var en_default2 = {
+  "task.nextComplete": "If this task is done, confirm completion to move it to Completed.",
+  "task.pendingCompletion": "Confirm completion",
+  "task.completedByUser": "Task completion confirmed by the user",
+  "errors.completionState": "This task cannot be completed directly. Review submitted deliveries instead.",
+  "errors.completionActive": "AI is still working or waiting for a response. Finish the current turn in the chat first.",
   "time.previousMonth": "Go to previous month",
   "time.nextMonth": "Go to next month",
   "time.dateLabel": "{{date}}",
@@ -22027,6 +22032,8 @@ var en_default2 = {
   "project.sharedTasks": "Projects, boards and timelines share the same tasks.",
   "project.acceptedCount": "{{accepted, number}} / {{count, number}} accepted",
   "connection.openLocal": "Open full app",
+  "connection.fullscreen": "Fullscreen",
+  "connection.fullscreenDenied": "The host did not switch this app to fullscreen.",
   "connection.localApp": "Local app: ",
   "connection.disconnected": "Workspace disconnected",
   "connection.connecting": "Connecting to the local workspace\u2026",
@@ -22047,6 +22054,10 @@ var en_default2 = {
   "session.confirmedAt": "Confirmed complete \xB7 {{at}}",
   "session.open": "Open chat",
   "session.handle": "Continue in original chat",
+  "session.confirmAll": "Confirm all",
+  "session.confirmAllHint": "Confirm all pending chats matching the current filters",
+  "session.confirmAllProgress": "Confirming {{done}} / {{total}}",
+  "session.confirmAllResult": "{{succeeded}} chats confirmed; {{failed}} unsuccessful",
   "session.confirm": "Confirm complete",
   "session.dragConfirm": "Drag to Completed to confirm this turn's result.",
   "session.invalidConfirmation": "Only stopped chats without a linked task can be confirmed complete.",
@@ -22090,10 +22101,10 @@ var en_default2 = {
   "task.name": "Task name",
   "task.title": "Task title",
   "task.description": "Task description",
-  "task.criteria": "Acceptance criteria",
+  "task.criteria": "Acceptance criteria (optional)",
   "task.definition": "Task description and acceptance criteria",
   "task.namePlaceholder": "Enter a task; AI can improve its title and definition.",
-  "task.criteriaPlaceholder": "Write observable, verifiable results before marking the task ready.",
+  "task.criteriaPlaceholder": "Optional: describe the results you want to check.",
   "task.priority": "Priority",
   "priority.low": "Low",
   "priority.normal": "Normal",
@@ -22112,7 +22123,19 @@ var en_default2 = {
   "task.reopen": "Reopen task",
   "task.advance": "Advance task",
   "task.redefine": "Redefine",
-  "task.ready": "Mark ready",
+  "task.ready": "Confirm requirements",
+  "task.nextStep": "Next step",
+  "task.nextReview": "Check the delivery and evidence, then accept or request changes.",
+  "task.nextApproval": "Open the chat and respond to the pending approval request.",
+  "task.nextInput": "Open the chat and answer the AI's question or provide the missing information.",
+  "task.nextResume": "Open the chat, check why execution failed or stopped, then continue.",
+  "task.nextRunning": "AI is working. Open the chat to view progress.",
+  "task.saveBeforeNext": "You have unsaved changes. Save them before the next step.",
+  "task.handleApproval": "Review approval",
+  "task.reply": "Reply to AI",
+  "task.resumeSession": "Check and continue",
+  "task.viewProgress": "View progress",
+  "task.otherActions": "Other actions",
   "task.execute": "Start execution",
   "task.cancel": "Cancel task",
   "task.deleteUnstarted": "Delete unstarted task",
@@ -22120,8 +22143,8 @@ var en_default2 = {
   "task.lockedHint": "The current state preserves the reviewed content. Request changes or reopen the task before editing.",
   "task.reviewedRevision": "Revision actually reviewed: r{{revision}}",
   "task.deliveryState": "Delivery: {{state}}",
-  "state.defining": "Needs definition",
-  "state.ready": "Ready to start",
+  "state.defining": "Confirm requirements",
+  "state.ready": "Confirmed",
   "state.executing": "AI in execution",
   "state.awaitingAcceptance": "Awaiting my acceptance",
   "state.changesRequested": "Changes requested",
@@ -22135,6 +22158,7 @@ var en_default2 = {
   "runtime.interrupted": "Interrupted",
   "runtime.failed": "Execution failed",
   "runtime.pendingConfirmation": "Awaiting confirmation",
+  "runtime.turnEnded": "Turn ended",
   "runtime.unknown": "Status unconfirmed",
   "runtime.planningQueued": "Planning queued",
   "runtime.planningRunning": "Planning",
@@ -22456,7 +22480,6 @@ var en_default2 = {
   "errors.sessionBound": "This chat is already linked to a task. Continue using that task.",
   "errors.transition": "Cannot transition from {{from}} to {{to}}.",
   "errors.humanReopen": "Reopening an accepted task must be done by a person in the UI.",
-  "errors.criteriaRequired": "Provide acceptance criteria first.",
   "errors.bindBeforeExecute": "Link a trusted chat before AI execution.",
   "errors.finishFocus": "Finish this task's focus timer first.",
   "errors.submitState": "Only tasks in execution can submit a delivery.",
@@ -22523,6 +22546,11 @@ var en_default2 = {
 
 // src/locales/zh-CN.ts
 var zh_CN_default2 = {
+  "task.nextComplete": "\u5982\u679C\u8FD9\u9879\u4EFB\u52A1\u5DF2\u7ECF\u505A\u5B8C\uFF0C\u70B9\u51FB\u201C\u786E\u8BA4\u5B8C\u6210\u201D\u79FB\u5230\u5DF2\u5B8C\u6210\u3002",
+  "task.pendingCompletion": "\u5F85\u786E\u8BA4\u5B8C\u6210",
+  "task.completedByUser": "\u7528\u6237\u786E\u8BA4\u4EFB\u52A1\u5B8C\u6210",
+  "errors.completionState": "\u5F53\u524D\u4EFB\u52A1\u4E0D\u80FD\u76F4\u63A5\u786E\u8BA4\u5B8C\u6210\uFF1B\u5F85\u9A8C\u6536\u4EFB\u52A1\u8BF7\u5BA1\u9605\u4EA4\u4ED8\u3002",
+  "errors.completionActive": "AI \u4ECD\u5728\u5904\u7406\u6216\u7B49\u5F85\u56DE\u590D\uFF0C\u8BF7\u5148\u5728\u4F1A\u8BDD\u4E2D\u7ED3\u675F\u672C\u8F6E\u5DE5\u4F5C\u3002",
   "time.previousMonth": "\u4E0A\u4E2A\u6708",
   "time.nextMonth": "\u4E0B\u4E2A\u6708",
   "time.dateLabel": "{{date}}",
@@ -22586,6 +22614,8 @@ var zh_CN_default2 = {
   "project.sharedTasks": "\u9879\u76EE\u3001\u770B\u677F\u548C\u65F6\u95F4\u7EBF\u5171\u4EAB\u540C\u4E00\u7EC4\u4EFB\u52A1\u3002",
   "project.acceptedCount": "{{accepted, number}} / {{count, number}} \u5DF2\u9A8C\u6536",
   "connection.openLocal": "\u6253\u5F00\u5B8C\u6574\u5E94\u7528",
+  "connection.fullscreen": "\u5168\u5C4F",
+  "connection.fullscreenDenied": "\u5F53\u524D\u7A97\u53E3\u672A\u5C06\u5E94\u7528\u5207\u6362\u5230\u5168\u5C4F\u3002",
   "connection.localApp": "\u672C\u5730\u5E94\u7528\uFF1A",
   "connection.disconnected": "\u5DE5\u4F5C\u53F0\u5C1A\u672A\u8FDE\u63A5",
   "connection.connecting": "\u6B63\u5728\u8FDE\u63A5\u672C\u5730\u5DE5\u4F5C\u53F0\u2026",
@@ -22606,6 +22636,10 @@ var zh_CN_default2 = {
   "session.confirmedAt": "\u5DF2\u786E\u8BA4\u5B8C\u6210 \xB7 {{at}}",
   "session.open": "\u6253\u5F00\u4F1A\u8BDD",
   "session.handle": "\u56DE\u539F\u4F1A\u8BDD\u5904\u7406",
+  "session.confirmAll": "\u4E00\u952E\u5904\u7406",
+  "session.confirmAllHint": "\u786E\u8BA4\u5F53\u524D\u7B5B\u9009\u8303\u56F4\u5185\u7684\u5168\u90E8\u5F85\u786E\u8BA4\u4F1A\u8BDD",
+  "session.confirmAllProgress": "\u6B63\u5728\u786E\u8BA4 {{done}} / {{total}}",
+  "session.confirmAllResult": "\u5DF2\u786E\u8BA4 {{succeeded}} \u4E2A\u4F1A\u8BDD\uFF0C{{failed}} \u4E2A\u672A\u6210\u529F",
   "session.confirm": "\u786E\u8BA4\u5B8C\u6210",
   "session.dragConfirm": "\u62D6\u5230\u201C\u5DF2\u5B8C\u6210\u201D\u53EF\u786E\u8BA4\u672C\u8F6E\u7ED3\u679C",
   "session.invalidConfirmation": "\u53EA\u6709\u5DF2\u7ED3\u675F\u4E14\u672A\u5173\u8054\u4EFB\u52A1\u7684\u4F1A\u8BDD\u53EF\u4EE5\u786E\u8BA4\u5B8C\u6210",
@@ -22646,10 +22680,10 @@ var zh_CN_default2 = {
   "task.name": "\u4EFB\u52A1\u540D\u79F0",
   "task.title": "\u4EFB\u52A1\u6807\u9898",
   "task.description": "\u4EFB\u52A1\u8BF4\u660E",
-  "task.criteria": "\u9A8C\u6536\u6807\u51C6",
+  "task.criteria": "\u9A8C\u6536\u6807\u51C6\uFF08\u9009\u586B\uFF09",
   "task.definition": "\u4EFB\u52A1\u8BF4\u660E\u4E0E\u9A8C\u6536\u6807\u51C6",
   "task.namePlaceholder": "\u8F93\u5165\u4EFB\u52A1\uFF0CAI \u53EF\u5B8C\u5584\u6807\u9898\u4E0E\u5B9A\u4E49",
-  "task.criteriaPlaceholder": "\u5199\u4E0B\u53EF\u89C2\u5BDF\u3001\u53EF\u6838\u5BF9\u7684\u7ED3\u679C\uFF0C\u624D\u80FD\u8BBE\u4E3A\u5C31\u7EEA\u3002",
+  "task.criteriaPlaceholder": "\u9009\u586B\uFF1A\u5199\u4E0B\u4F60\u5E0C\u671B\u6838\u5BF9\u7684\u7ED3\u679C\u3002",
   "task.priority": "\u4F18\u5148\u7EA7",
   "priority.low": "\u4F4E",
   "priority.normal": "\u666E\u901A",
@@ -22668,7 +22702,19 @@ var zh_CN_default2 = {
   "task.reopen": "\u91CD\u5F00\u4EFB\u52A1",
   "task.advance": "\u63A8\u8FDB\u4EFB\u52A1",
   "task.redefine": "\u91CD\u65B0\u5B9A\u4E49",
-  "task.ready": "\u8BBE\u4E3A\u5C31\u7EEA",
+  "task.ready": "\u786E\u8BA4\u8981\u6C42",
+  "task.nextStep": "\u4E0B\u4E00\u6B65",
+  "task.nextReview": "\u68C0\u67E5\u4EA4\u4ED8\u7ED3\u679C\u548C\u8BC1\u636E\uFF0C\u9009\u62E9\u901A\u8FC7\u6216\u9000\u56DE\u3002",
+  "task.nextApproval": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u5904\u7406 AI \u6B63\u5728\u7B49\u5F85\u7684\u5BA1\u6279\u3002",
+  "task.nextInput": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u56DE\u590D AI \u7684\u95EE\u9898\u6216\u8865\u5145\u6240\u9700\u4FE1\u606F\u3002",
+  "task.nextResume": "\u6253\u5F00\u4F1A\u8BDD\uFF0C\u68C0\u67E5\u5931\u8D25\u6216\u4E2D\u65AD\u539F\u56E0\u540E\u7EE7\u7EED\u3002",
+  "task.nextRunning": "AI \u6B63\u5728\u5904\u7406\uFF0C\u53EF\u6253\u5F00\u4F1A\u8BDD\u67E5\u770B\u8FDB\u5EA6\u3002",
+  "task.saveBeforeNext": "\u6709\u672A\u4FDD\u5B58\u7684\u66F4\u6539\uFF0C\u8BF7\u5148\u4FDD\u5B58\uFF0C\u518D\u8FDB\u884C\u4E0B\u4E00\u6B65\u3002",
+  "task.handleApproval": "\u5904\u7406\u5BA1\u6279",
+  "task.reply": "\u56DE\u590D AI",
+  "task.resumeSession": "\u68C0\u67E5\u5E76\u7EE7\u7EED",
+  "task.viewProgress": "\u67E5\u770B\u8FDB\u5EA6",
+  "task.otherActions": "\u5176\u4ED6\u64CD\u4F5C",
   "task.execute": "\u5F00\u59CB\u6267\u884C",
   "task.cancel": "\u53D6\u6D88\u4EFB\u52A1",
   "task.deleteUnstarted": "\u5220\u9664\u672A\u6267\u884C\u4EFB\u52A1",
@@ -22676,8 +22722,8 @@ var zh_CN_default2 = {
   "task.lockedHint": "\u5F53\u524D\u72B6\u6001\u4FDD\u7559\u5BA1\u9605\u5185\u5BB9\u3002\u9700\u8981\u66F4\u6539\u8BF7\u5148\u9000\u56DE\u6216\u91CD\u65B0\u6253\u5F00\u3002",
   "task.reviewedRevision": "\u672C\u6B21\u5B9E\u9645\u5BA1\u9605\u7248\u672C r{{revision}}",
   "task.deliveryState": "\u4EA4\u4ED8\uFF1A{{state}}",
-  "state.defining": "\u9700\u8865\u5145\u8981\u6C42",
-  "state.ready": "\u53EF\u4EE5\u5F00\u59CB",
+  "state.defining": "\u5F85\u786E\u8BA4\u8981\u6C42",
+  "state.ready": "\u5DF2\u786E\u5B9A",
   "state.executing": "AI \u6267\u884C\u4E2D",
   "state.awaitingAcceptance": "\u5F85\u6211\u9A8C\u6536",
   "state.changesRequested": "\u9700\u4FEE\u6539",
@@ -22691,6 +22737,7 @@ var zh_CN_default2 = {
   "runtime.interrupted": "\u5DF2\u4E2D\u65AD",
   "runtime.failed": "\u6267\u884C\u5931\u8D25",
   "runtime.pendingConfirmation": "\u5F85\u786E\u5B9A",
+  "runtime.turnEnded": "\u672C\u8F6E\u5DF2\u7ED3\u675F",
   "runtime.unknown": "\u72B6\u6001\u672A\u786E\u8BA4",
   "runtime.planningQueued": "\u7B49\u5F85\u89C4\u5212",
   "runtime.planningRunning": "\u6B63\u5728\u89C4\u5212",
@@ -23003,7 +23050,6 @@ var zh_CN_default2 = {
   "errors.sessionBound": "\u8BE5\u4F1A\u8BDD\u5DF2\u7ED1\u5B9A\u4EFB\u52A1\uFF0C\u8BF7\u7EE7\u7EED\u4F7F\u7528\u539F\u4EFB\u52A1",
   "errors.transition": "\u4E0D\u80FD\u4ECE {{from}} \u53D8\u4E3A {{to}}",
   "errors.humanReopen": "\u91CD\u65B0\u6253\u5F00\u5DF2\u9A8C\u6536\u4EFB\u52A1\u5FC5\u987B\u7531\u4EBA\u5728\u754C\u9762\u64CD\u4F5C",
-  "errors.criteriaRequired": "\u8BF7\u5148\u586B\u5199\u9A8C\u6536\u6807\u51C6",
   "errors.bindBeforeExecute": "AI \u6267\u884C\u524D\u5FC5\u987B\u7ED1\u5B9A\u53EF\u4FE1\u4F1A\u8BDD",
   "errors.finishFocus": "\u8BF7\u5148\u7ED3\u675F\u6B64\u4EFB\u52A1\u7684\u4E13\u6CE8\u8BA1\u65F6",
   "errors.submitState": "\u53EA\u6709\u6267\u884C\u4E2D\u7684\u4EFB\u52A1\u53EF\u63D0\u4EA4\u4EA4\u4ED8",
@@ -23120,6 +23166,7 @@ var commandSchema = external_exports.discriminatedUnion("action", [
   external_exports.object({ action: external_exports.literal("ack"), id }).strict()
 ]);
 var reviewSchema = external_exports.object({ id, revision, decision: external_exports.enum(["accept", "reject"]), confirmed: external_exports.literal(true), reviewer: text, note: note.default("") }).strict();
+var taskCompleteSchema = reviewSchema.pick({ id: true, revision: true, confirmed: true });
 var sessionConfirmSchema = external_exports.object({ id, observedAt: date5, event: external_exports.string().min(1).max(200), turnId: external_exports.string().max(200).nullable(), catalogUpdatedAt: date5.nullable(), confirmed: external_exports.literal(true) }).strict();
 var DomainError = class extends Error {
   constructor(code, status = 400, params = {}) {
@@ -23409,7 +23456,6 @@ var Store = class {
         const allowed = { defining: ["ready", "cancelled"], ready: ["defining", "executing", "cancelled"], executing: ["cancelled"], changes_requested: ["ready", "executing", "cancelled"], cancelled: ["defining"], accepted: ["defining"] };
         requireThat(allowed[task.state]?.includes(c.state), "errors.transition", 400, { from: task.state, to: c.state });
         if (task.state === "accepted") requireThat(authority === "human", "errors.humanReopen");
-        if (c.state === "ready") requireThat(task.criteria.trim(), "errors.criteriaRequired");
         if (c.state === "executing" && authority === "model") requireThat(task.sessionId, "errors.bindBeforeExecute");
         if (c.state === "cancelled") requireThat(this.focus().taskId !== task.id || this.focus().status === "idle", "errors.finishFocus");
         task.state = c.state;
@@ -23440,15 +23486,31 @@ var Store = class {
       this.check(task, c.revision);
       requireThat(task.state === "awaiting_acceptance" && task.delivery?.evidence.length, "errors.reviewState");
       if (c.decision === "reject") requireThat(c.note.trim(), "errors.rejectReason");
-      requireThat(this.focus().taskId !== task.id || this.focus().status === "idle", "errors.finishFocus");
-      task.state = c.decision === "accept" ? "accepted" : "changes_requested";
-      task.revision++;
-      task.updatedAt = this.at();
-      task.review = { decision: c.decision, reviewer: c.reviewer, note: c.note, at: this.at(), reviewedRevision: c.revision };
-      this.save("task", task);
-      this.event(task.id, "review", { ...task.review, delivery: task.delivery });
-      return task;
+      return this.recordReview(task, c);
     });
+  }
+  completeTask(raw) {
+    const c = taskCompleteSchema.parse(raw);
+    return this.transaction(() => {
+      const task = this.get("task", c.id);
+      this.check(task, c.revision);
+      requireThat(["defining", "ready", "executing", "changes_requested"].includes(task.state), "errors.completionState");
+      const session = this.sessions().find((session2) => session2.id === task.sessionId);
+      requireThat(!session || !["queued", "running", "waiting_approval", "waiting_input"].includes(runtimeState(session.state)), "errors.completionActive");
+      const focus = this.focus();
+      if (focus.taskId === task.id && focus.status !== "idle") this.changeFocus({ action: "focus", operation: "finish", revision: focus.revision });
+      return this.recordReview(task, { ...c, decision: "accept", reviewer: "human", note: i18n.t("task.completedByUser") });
+    });
+  }
+  recordReview(task, c) {
+    requireThat(this.focus().taskId !== task.id || this.focus().status === "idle", "errors.finishFocus");
+    task.state = c.decision === "accept" ? "accepted" : "changes_requested";
+    task.revision++;
+    task.updatedAt = this.at();
+    task.review = { decision: c.decision, reviewer: c.reviewer, note: c.note, at: this.at(), reviewedRevision: c.revision };
+    this.save("task", task);
+    this.event(task.id, "review", { ...task.review, delivery: task.delivery });
+    return task;
   }
   confirmSession(raw) {
     const c = sessionConfirmSchema.parse(raw);

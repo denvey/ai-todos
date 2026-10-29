@@ -9,7 +9,7 @@ import { Code2, ExternalLink, Link2, Save, Sparkles, X } from 'lucide-react';
 import { DatePickerField, SelectField } from './FormControls.tsx';
 import { AiBadge } from './ExecutionView.tsx';
 import { dateInput, fmt, hours, labels, parseSchedule, runtimeLabel } from '../format.ts';
-import { taskStatus } from '../execution-board.ts';
+import { taskStatus, taskNextStep } from '../execution-board.ts';
 
 export function EditorDialog({ title, description, busy, error, onClose, children }: { title: string; description: string; busy: boolean; error: string; onClose: () => void; children: ReactNode }) {
   const { t } = useTranslation();
@@ -41,7 +41,7 @@ export function Delivery({ task }: { task: Pick<Task, 'delivery'> }) {
   return <section className="dialog-section"><h3>{t("delivery.evidence")}</h3><p>{delivery.summary}</p>{delivery.evidence.map((evidence, index) => <div className="evidence" key={index}><strong>{evidence.label}</strong><p>{/^https?:\/\//.test(evidence.uri) ? <a href={evidence.uri} target="_blank" rel="noreferrer">{evidence.uri}</a> : <span className="mono">{evidence.uri}</span>}</p><p>{evidence.note}</p></div>)}<p className="muted">{t("delivery.submittedAt", { at: fmt(delivery.submittedAt) })}</p></section>;
 }
 
-export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, onRefine, onSyncProjects, onTransition, onBind, onSubmitDelivery, onReview, onFocus, onPrompt, onOpenCodex, onDelete }: TaskEditorProps) {
+export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, onRefine, onSyncProjects, onTransition, onBind, onSubmitDelivery, onReview, onComplete, onFocus, onPrompt, onOpenCodex, onDelete }: TaskEditorProps) {
   const { t } = useTranslation();
   const creating = !task.id;
   const editable = creating || !['accepted', 'awaiting_acceptance', 'cancelled'].includes(task.state ?? '');
@@ -65,8 +65,12 @@ export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, on
   const groups = (items: string[][]) => [{ options: items.map(([value, label]) => ({ value, label })) }];
   const transitions = ({ defining: ['ready', 'cancelled'], ready: ['defining', 'executing', 'cancelled'], executing: ['cancelled'], changes_requested: ['executing', 'cancelled'], accepted: ['defining'], cancelled: ['defining'], awaiting_acceptance: [] } as Record<string, TransitionState[]>)[task.state ?? ''] || [];
   const liveTask = { ...task, ...snapshot.tasks.find(item => item.id === task.id) } as Task;
+  const next = creating ? null : taskNextStep(liveTask);
   useEffect(() => { setSessionId(liveTask.sessionId || ''); }, [liveTask.sessionId]);
-  return <form onSubmit={event => { event.preventDefault(); onSave({ title: values.title, description: values.description, criteria: values.criteria, priority: values.priority, projectId: values.projectId || null, keyResultId: values.keyResultId || null, remindAt: values.remindAt ? new Date(values.remindAt).toISOString() : null, ...parseSchedule(values) }); }}>
+  return <form onSubmit={event => {
+    event.preventDefault();
+    onSave({ title: values.title, description: values.description, criteria: values.criteria, priority: values.priority, projectId: values.projectId || null, keyResultId: values.keyResultId || null, remindAt: values.remindAt ? new Date(values.remindAt).toISOString() : null, ...parseSchedule(values) });
+  }}>
     <div className="task-editor__body">
       {!creating && <div className="row"><span className={`execution-status status-${liveTask.state}`}>{taskStatus(liveTask)}</span>{taskStatus(liveTask) !== t(labels[liveTask.state]) && <span className="execution-dependency">{t("task.deliveryState", { state: t(labels[liveTask.state]) })}</span>}{taskStatus(liveTask) !== runtimeLabel(liveTask.ai) && <AiBadge task={liveTask} />}<span className="mono">r{task.revision}</span>{(liveTask.sessionId || ['defining', 'ready', 'changes_requested'].includes(liveTask.state)) && onOpenCodex && <><button type="button" className="quiet small" disabled={busy || (!liveTask.sessionId && hasChanges)} onClick={onOpenCodex}><ExternalLink size={14} />{t("session.open")}</button>{!liveTask.sessionId && hasChanges && <small className="muted">{t("task.saveFirst")}</small>}</>}</div>}
       <Field label={t("task.name")} value={values.title} onChange={value => setValue('title', value)} required maxLength={300} disabled={disabled} autoFocus placeholder={t("task.namePlaceholder")} action={aiAction('title', t("task.name"))} />
@@ -86,7 +90,7 @@ export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, on
       </div></details>
       {!editable && <p className="note">{t("task.lockedHint")}</p>}
     {!creating && <div className="editor-details">
-      <section className="dialog-section"><h3>{t("task.advance")}</h3><div className="row">{transitions.map(state => <button type="button" key={state} className={state === 'cancelled' ? 'danger small' : 'small'} disabled={busy} onClick={() => onTransition(state)}>{state === 'defining' ? t("task.redefine") : state === 'ready' ? t("task.ready") : state === 'executing' ? t("task.execute") : t("task.cancel")}</button>)}{task.state === 'executing' && <button type="button" className="primary small" disabled={busy} onClick={onSubmitDelivery}>{t("delivery.submit")}</button>}{task.state === 'awaiting_acceptance' && <button type="button" className="primary small" disabled={busy} onClick={onReview}>{t("review.acceptOrReject")}</button>}{!['accepted', 'cancelled'].includes(task.state ?? '') && snapshot.focus.status === 'idle' && <button type="button" className="small" disabled={busy} onClick={onFocus}>{t("focus.taskAction")}</button>}</div><p className="muted">{t("task.executionHint")}</p></section>
+      <section className="dialog-section"><h3>{t("task.otherActions")}</h3><div className="row">{transitions.map(state => <button type="button" key={state} className={state === 'cancelled' ? 'danger small' : 'small'} disabled={busy || hasChanges} onClick={() => onTransition(state)}>{state === 'defining' ? t("task.redefine") : state === 'ready' ? t("task.ready") : state === 'executing' ? t("task.execute") : t("task.cancel")}</button>)}{task.state === 'executing' && <button type="button" className="small" disabled={busy || hasChanges} onClick={onSubmitDelivery}>{t('delivery.submit')}</button>}{!['accepted', 'cancelled'].includes(task.state ?? '') && snapshot.focus.status === 'idle' && <button type="button" className="small" disabled={busy} onClick={onFocus}>{t("focus.taskAction")}</button>}</div></section>
       <details className="codex-settings"><summary><Code2 size={15} /><span><strong>{t("ai.linkTitle")}</strong><small>{liveTask.sessionId || t("ai.unlinked")}</small></span></summary><div className="codex-settings__body"><code className="mono">{t("ai.taskId", { id: task.id })}</code>{['defining', 'ready', 'changes_requested'].includes(task.state ?? '') && <><SelectField label={t("ai.trustedSession")} value={sessionId} disabled={busy} onValueChange={setSessionId} groups={groups([['', t("ai.unlink")], ...snapshot.sessions.map(session => [session.id, `${session.title || session.id.slice(0, 8)} · ${runtimeLabel(session)}`])])} /><button type="button" disabled={busy} onClick={() => onBind(sessionId || null)}>{t("ai.saveLink")}</button></>}<p className="muted">{t("ai.linkHint")}</p><button type="button" disabled={busy} onClick={onPrompt}>{t("ai.generatePrompt")}</button></div></details>
       <Delivery task={task} />
       {task.review && <section className="dialog-section"><h3>{t("review.latest")}</h3><p>{task.review.decision === 'accept' ? t("review.accept") : t("review.reject")} · {task.review.reviewer}{t("review.actualRevision", { revision: task.review.reviewedRevision })}</p><p className="muted">{task.review.note}</p></section>}
@@ -94,6 +98,10 @@ export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, on
       {task.state === 'defining' && <div className="actions"><button type="button" disabled={busy} className="danger small" onClick={onDelete}>{t("task.deleteUnstarted")}</button></div>}
     </div>}
     </div>
-    {editable && <footer className="task-editor__actions"><button className="primary" type="submit" disabled={busy}><Save size={16} />{busy ? refining ? t("ai.waiting") : t("common.processing") : creating ? t("task.create") : t("common.saveChanges")}</button></footer>}
+    {(editable || next) && <footer className="task-editor__actions">
+      {next && <div className="task-editor__next"><strong>{t('task.nextStep')}</strong><small>{t(hasChanges ? 'task.saveBeforeNext' : next.hint)}</small></div>}
+      {editable && <button className={next ? '' : 'primary'} type="submit" disabled={busy}><Save size={16} />{busy ? refining ? t("ai.waiting") : t("common.processing") : creating ? t("task.create") : t("common.saveChanges")}</button>}
+      {next && <button className="primary" type="button" disabled={busy || hasChanges} onClick={() => next.action === 'complete' ? onComplete() : next.action === 'review' ? onReview() : onOpenCodex()}>{t(next.label)}</button>}
+    </footer>}
   </form>;
 }

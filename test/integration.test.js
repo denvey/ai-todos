@@ -44,13 +44,15 @@ createInterface({ input: process.stdin }).on('line', line => {
   await client.connect(transport);
   assert.equal(oldStopped, true);
   assert.equal((await fetch(`${origin}/health`).then(response => response.json())).version, JSON.parse(readFileSync('package.json', 'utf8')).version);
-  const tools = await client.listTools(); assert.equal(tools.tools.length, 6);
+  const tools = await client.listTools(); assert.equal(tools.tools.length, 7);
   assert.equal(tools.tools.find(tool => tool.name === 'ai_todos_snapshot').inputSchema.properties.syncThreads.type, 'boolean');
   assert.deepEqual(tools.tools.find(tool => tool.name === 'ai_todos_confirm_session')._meta.ui.visibility, ['app']);
+  assert.deepEqual(tools.tools.find(tool => tool.name === 'ai_todos_complete_task')._meta.ui.visibility, ['app']);
   assert.ok(!tools.tools.some(t => /accept|review/.test(t.name)));
   const open = tools.tools.find(t => t.name === 'ai_todos_open'); assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
   const resources = await client.listResources(); assert.equal(resources.resources[0].uri, 'ui://ai-todos/app.html');
   const resource = await client.readResource({ uri: 'ui://ai-todos/app.html' }); assert.equal(resource.contents[0].mimeType, 'text/html;profile=mcp-app'); assert.ok(resource.contents[0].text.includes(origin));
+  assert.deepEqual(resource.contents[0]._meta['openai/ui'].availableDisplayModes, ['inline', 'fullscreen']);
   const opened = await client.callTool({ name: 'ai_todos_open', arguments: {} }); assert.equal(opened.structuredContent.browserUrl, origin);
   const command = async c => {
     const result = await client.callTool({ name: 'ai_todos_manage', arguments: { command: c } });
@@ -100,6 +102,15 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.match(validation.messages['zh-CN'], /时区无效/);
   assert.equal((await fetch(`${origin}/api/command`, { method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, body: '{}' })).status, 403);
   assert.equal((await fetch(`${origin}/internal/state`)).status, 401);
+  const manual = await command({ action: 'create', kind: 'task', requestId: randomUUID(), data: { title: '空白标准人工完成' } });
+  const completion = { id: manual.id, revision: manual.revision, confirmed: true };
+  assert.equal((await fetch(`${origin}/api/task-complete`, { method: 'POST', headers: { cookie, origin, 'content-type': 'application/json' }, body: JSON.stringify(completion) })).status, 403);
+  assert.equal((await post('task-complete', { ...completion, confirmed: false })).status, 400);
+  assert.equal((await post('task-complete', { ...completion, revision: completion.revision + 1 })).status, 409);
+  const completed = await post('task-complete', completion);
+  assert.equal(completed.status, 200);
+  assert.equal((await completed.json()).state, 'accepted');
+  assert.equal((await post('task-complete', completion)).status, 409);
   const ticket = await (await post('review-ticket', { id: task.id, revision: task.revision })).json();
   assert.ok(ticket.ticket); const input = { ticket: ticket.ticket, id: task.id, revision: task.revision, decision: 'reject', confirmed: true, reviewer: 'Test human fixture', note: '验证退回' };
   assert.equal((await post('review', { ...input, note: '' })).status, 400);
@@ -110,6 +121,6 @@ createInterface({ input: process.stdin }).on('line', line => {
   assert.equal((await post('review-ticket', { id: task.id, revision: ticket.task.revision })).status, 409);
   const packaged = new Client({ name: 'packaged-entry-check', version: '1' });
   await packaged.connect(new StdioClientTransport({ command: process.execPath, args: [resolve('plugins/ai-todos/src/mcp.js')], env, stderr: 'pipe' }));
-  try { const result = await packaged.callTool({ name: 'ai_todos_snapshot', arguments: {} }); assert.equal(result.structuredContent.tasks[0].id, task.id); } finally { await packaged.close(); }
+  try { const result = await packaged.callTool({ name: 'ai_todos_snapshot', arguments: {} }); assert.equal(result.structuredContent.tasks.find(item => item.id === task.id).state, task.state); } finally { await packaged.close(); }
   assert.doesNotMatch(stderr, /TypeError|SyntaxError|ReferenceError/);
 });

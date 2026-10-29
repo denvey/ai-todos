@@ -1,0 +1,18 @@
+Use case: ads-marketing
+Asset type: one landscape promotional image for an X post, 2048x1152.
+Primary request: promote ai-todos, a local task workspace for Codex. Communicate the pain of opening multiple Codex chats to discover which is running, waiting for human input, or ready for delivery review. The solution is a single board combining task progress and observed chat activity.
+
+Create a polished, readable editorial technology poster, with generous margins and strong typography. Use a charcoal background, warm off-white text, and restrained cyan, amber, and mint status accents. A flat, crisp, carefully composed graphic, with subtle paper grain. No photographic elements.
+
+Composition: large headline in the upper-left area; a few overlapping, subdued chat windows underneath it suggesting the burden of checking chats. To the right, these windows resolve into an orderly three-column task board with a simple connector. Make the board a conceptual illustration, not a claimed screenshot. Keep the headline and the product name readable at mobile-feed size. Avoid tiny UI text, excessive decorations, glowing sci-fi effects, gradients, and fake statistics.
+
+Text (verbatim, no additional words):
+Product name: "ai-todos"
+Main headline: "Stop checking every Codex chat."
+Supporting line: "One board for your Codex tasks."
+Board column labels: "Running", "Needs input", "Ready for review"
+Board task labels: "Build the feature", "Clarify requirements", "Review the delivery"
+Small footer: "AI delivers. You review."
+Repository: "github.com/denvey/ai-todos"
+
+Use contemporary sans-serif typography with a bold main headline and restrained monospace for the repository address. Show a progress mark for Running, a question mark for Needs input, and a document icon for Ready for review. Ready for review is a human review state: do not use an accepted/completed checkmark there. Do not imply that AI stopping automatically accepts the task, that all runtime activity is always observable, or that ai-todos automatically starts AI work. No invented logos, awards, adoption numbers, or watermarks.

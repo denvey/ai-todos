@@ -25,6 +25,7 @@ export function executionColumnForTask(task: Pick<Task, 'state' | 'ai'>, runtime
     }
     if (['queued', 'running'].includes(state)) return 'executing';
     if (['waiting_approval', 'waiting_input', 'failed'].includes(state)) return 'waiting_user';
+    if (['idle', 'completed'].includes(state) && (runtime.turnId || runtime.event === 'Stop')) return 'waiting_user';
     if (state === 'interrupted') return 'ready';
     if (['completed', 'idle', 'unknown'].includes(state) && task.state === 'executing') return 'waiting_user';
   }
@@ -34,10 +35,24 @@ export function taskStatus(task: Pick<Task, 'state' | 'ai' | 'sessionId'>) {
   const column = executionColumnForTask(task);
   if (column === 'cancelled') return i18n.t(labels.cancelled);
   if (column === 'completed') return i18n.t('board.completed');
+  if (task.state !== 'awaiting_acceptance' && task.sessionId && ['idle', 'completed'].includes(runtimeState(task.ai?.state))) return i18n.t('task.pendingCompletion');
+  if (runtimeState(task.ai?.state) === 'interrupted') return runtimeLabel(task.ai);
   if (['defining', 'ready', 'changes_requested'].includes(column)) return i18n.t(labels[column]);
   if (task.state === 'awaiting_acceptance') return i18n.t(labels.awaiting_acceptance);
   if (task.state === 'executing' && !task.sessionId) return i18n.t('state.manualExecuting');
   return runtimeLabel(task.ai) || i18n.t(labels[task.state]);
+}
+export function taskNextStep(task: Pick<Task, 'state' | 'ai' | 'sessionId'>): { action: 'complete' | 'review' | 'session'; label: TranslationKey; hint: TranslationKey } | null {
+  if (['accepted', 'cancelled'].includes(task.state)) return null;
+  if (task.state === 'awaiting_acceptance') return { action: 'review', label: 'review.action', hint: 'task.nextReview' };
+  const runtime = runtimeState(task.ai?.state);
+  if (task.sessionId && ['queued', 'running', 'waiting_approval', 'waiting_input', 'failed', 'interrupted'].includes(runtime)) {
+    if (runtime === 'waiting_approval') return { action: 'session', label: 'task.handleApproval', hint: 'task.nextApproval' };
+    if (runtime === 'waiting_input') return { action: 'session', label: 'task.reply', hint: 'task.nextInput' };
+    if (runtime === 'failed' || runtime === 'interrupted') return { action: 'session', label: 'task.resumeSession', hint: 'task.nextResume' };
+    return { action: 'session', label: 'task.viewProgress', hint: 'task.nextRunning' };
+  }
+  return { action: 'complete', label: 'session.confirm', hint: 'task.nextComplete' };
 }
 export function executionColumnForSession(session: Pick<LiveSession, 'state' | 'confirmedAt'>) {
   const state = runtimeState(session.state);
