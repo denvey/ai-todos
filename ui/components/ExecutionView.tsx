@@ -29,6 +29,9 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
   const contentId = useId();
   const column = executionColumnForTask(task), status = taskStatus(task), next = taskNextStep(task);
   return <article className="execution-card execution-task-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
+    onClick={event => {
+      if (!busy && !dragged.current && !(event.target as HTMLElement).closest('button, a, input, textarea, select, summary')) onOpenTask(task.id);
+    }}
     onDragStart={event => { dragged.current = true; onDragStart?.(event, task); }}
     onDragEnd={() => { onDragEnd?.(); setTimeout(() => { dragged.current = false; }, 0); }}>
     <div className="execution-card__summary">
