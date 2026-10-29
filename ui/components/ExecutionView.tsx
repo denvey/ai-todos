@@ -278,7 +278,9 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
     const viewport = canvas.current?.parentElement?.getBoundingClientRect();
     const axisBottom = canvas.current?.firstElementChild?.getBoundingClientRect().bottom;
     if (!rect || !viewport || event.clientX < viewport.left - tolerance || event.clientX > viewport.right + tolerance || event.clientY < (axisBottom ?? rect.top) - tolerance || event.clientY > rect.bottom + tolerance) return null;
-    return Math.max(0, Math.min(days - 0.5, Math.floor((event.clientX - rect.left) / dayWidth * 2) / 2));
+    const x = event.clientX - rect.left;
+    if (x < 0 || x >= width) return null;
+    return Math.floor(x / dayWidth * 2) / 2;
   };
   const showDropPreview = !!selectedTask && dropDay !== null;
   const placeTask = async (task: Task, day: number) => {
