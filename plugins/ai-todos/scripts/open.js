@@ -64,7 +64,7 @@ var package_default = {
   }
 };
 
-// node_modules/i18next/dist/esm/i18next.js
+// ../../../../Workspace/Coding/OpenSource/ai-todos/node_modules/i18next/dist/esm/i18next.js
 var isString = (obj) => typeof obj === "string";
 var defer = () => {
   let res;
@@ -2592,9 +2592,12 @@ var en_default = {
   "timeline.taskProject": "Task / Project",
   "timeline.axis": "Gantt chart timeline; scroll horizontally.",
   "timeline.range": "{{title}}: {{value}} to {{value2}}",
-  "timeline.empty": "No scheduled tasks. Set planned dates in task details.",
+  "timeline.locked": "{{state}}: schedule locked. Click to view details.",
+  "timeline.empty": "No scheduled tasks. Drag a task here from below.",
   "timeline.allScheduled": "All active tasks are scheduled.",
-  "timeline.controls": "Drag to move; drag an edge to adjust the start or end. Use \u2190 \u2192 to move one day, or hold Shift to adjust the end. Saves use the revision actually read.",
+  "timeline.returnHint": "Drop a task bar here to clear its schedule and keep the task.",
+  "timeline.dropHint": "Drop on either half of a date column to schedule one day.",
+  "timeline.controls": "Moving and resizing snap to half-day (12-hour) steps. Drag unscheduled cards onto a date; drag bars back to the pool to clear dates. Awaiting acceptance and accepted tasks are locked. Arrow keys move half a day; Shift adjusts the end.",
   "focus.start": "Start focus",
   "focus.pause": "Pause focus",
   "focus.resume": "Resume focus",
@@ -3172,9 +3175,12 @@ var zh_CN_default = {
   "timeline.taskProject": "\u4EFB\u52A1 / \u9879\u76EE",
   "timeline.axis": "\u7518\u7279\u56FE\u65F6\u95F4\u8F74\uFF0C\u53EF\u6C34\u5E73\u6EDA\u52A8",
   "timeline.range": "{{title}}\uFF1A{{value}} \u81F3 {{value2}}",
-  "timeline.empty": "\u6682\u65E0\u5DF2\u6392\u671F\u4EFB\u52A1\uFF0C\u5728\u4EFB\u52A1\u8BE6\u60C5\u4E2D\u8BBE\u7F6E\u8BA1\u5212\u65F6\u95F4\u3002",
+  "timeline.locked": "{{state}}\uFF0C\u6392\u671F\u5DF2\u9501\u5B9A\uFF1B\u70B9\u51FB\u67E5\u770B\u8BE6\u60C5\u3002",
+  "timeline.empty": "\u6682\u65E0\u5DF2\u6392\u671F\u4EFB\u52A1\uFF0C\u53EF\u4ECE\u4E0B\u65B9\u62D6\u5165\u4EFB\u52A1\u3002",
   "timeline.allScheduled": "\u6240\u6709\u6D3B\u52A8\u4EFB\u52A1\u5747\u5DF2\u6392\u671F\u3002",
-  "timeline.controls": "\u62D6\u52A8\u79FB\u52A8\uFF0C\u8FB9\u7F18\u8C03\u6574\u8D77\u6B62\uFF1B\u952E\u76D8 \u2190 \u2192 \u79FB\u52A8\u4E00\u5929\uFF0CShift \u8C03\u6574\u7ED3\u675F\u3002\u4FDD\u5B58\u4F7F\u7528\u5B9E\u9645\u8BFB\u53D6\u7684 revision\u3002",
+  "timeline.returnHint": "\u5C06\u4EFB\u52A1\u6761\u62D6\u56DE\u8FD9\u91CC\u53EF\u53D6\u6D88\u6392\u671F\uFF0C\u4FDD\u7559\u4EFB\u52A1\u3002",
+  "timeline.dropHint": "\u62D6\u5230\u65E5\u671F\u5217\u7684\u524D\u534A\u683C\u6216\u540E\u534A\u683C\uFF0C\u9ED8\u8BA4\u5B89\u6392\u4E00\u5929\u3002",
+  "timeline.controls": "\u79FB\u52A8\u548C\u62C9\u4F38\u5747\u6309\u534A\u5929\uFF0812 \u5C0F\u65F6\uFF09\u5438\u9644\uFF1B\u6574\u5F20\u672A\u6392\u671F\u5361\u7247\u53EF\u62D6\u5165\u65E5\u671F\u5217\uFF0C\u4EFB\u52A1\u6761\u53EF\u62D6\u56DE\u672A\u6392\u671F\u533A\u3002\u5F85\u9A8C\u6536\u3001\u5DF2\u9A8C\u6536\u4EFB\u52A1\u4E0D\u53EF\u8C03\u6574\u3002\u952E\u76D8 \u2190 \u2192 \u79FB\u52A8\u534A\u5929\uFF0CShift \u8C03\u6574\u7ED3\u675F\u3002",
   "focus.start": "\u5F00\u59CB\u4E13\u6CE8",
   "focus.pause": "\u6682\u505C\u4E13\u6CE8",
   "focus.resume": "\u7EE7\u7EED\u4E13\u6CE8",

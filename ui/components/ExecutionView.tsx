@@ -4,8 +4,9 @@ import { getLocale } from '../i18n.ts';
 import type { CSSProperties, DragEvent, PointerEvent } from 'react';
 import type { Task, Project, LiveSession } from '../../src/types.ts';
 import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
-import { useRef, useState } from 'react';
 import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2, Play } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
 import { runtimeState } from '../../src/runtime.ts';
 import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, taskNextStep, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
@@ -25,13 +26,14 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const dragged = useRef(false);
+  const contentId = useId();
   const column = executionColumnForTask(task), status = taskStatus(task), next = taskNextStep(task);
   return <article className="execution-card execution-task-card" draggable={!!onDragStart && !busy && !['accepted', 'cancelled'].includes(task.state) && boardColumns.some(target => boardDropDecision(task, target.dropTarget).action)}
     onDragStart={event => { dragged.current = true; onDragStart?.(event, task); }}
     onDragEnd={() => { onDragEnd?.(); setTimeout(() => { dragged.current = false; }, 0); }}>
     <div className="execution-card__summary">
       <button type="button" className="execution-card__title" disabled={busy} aria-label={t("task.openDetails", { title: task.title })} onClick={() => { if (!dragged.current) onOpenTask(task.id); }}><strong title={task.title}>{task.title}</strong></button>
-      <button type="button" className="execution-card__expand" disabled={busy} aria-label={t("task.expand", { title: task.title })} aria-expanded={expanded} aria-controls={`execution-task-${task.id}`} onClick={() => { if (!dragged.current) setExpanded(value => !value); }}><ChevronDown size={14} aria-hidden="true" /></button>
+      <button type="button" className="execution-card__expand" disabled={busy} aria-label={t("task.expand", { title: task.title })} aria-expanded={expanded} aria-controls={contentId} onClick={() => { if (!dragged.current) setExpanded(value => !value); }}><ChevronDown size={14} aria-hidden="true" /></button>
     </div>
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
@@ -43,7 +45,7 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
     </div>
     {(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <div className="execution-card__badges"><AiBadge task={task} /></div>}
     {next && <small className="execution-card__next-hint">{t(next.hint)}</small>}
-    <div id={`execution-task-${task.id}`} className="execution-card__content" hidden={!expanded}>
+    <div id={contentId} className="execution-card__content" hidden={!expanded}>
       <div className="execution-card__body">
         <span className="execution-card__topline"><span>{t("task.priorityLabel", { priority: t(priorityLabels[task.priority]) })}</span><span>r{task.revision}</span></span>
         <small>{projects.find(project => project.id === task.projectId)?.title || t("project.none")} · {task.plannedStart ? `${fmt(task.plannedStart)} → ${fmt(task.plannedEnd)}` : t("schedule.unscheduled")}</small>
@@ -161,50 +163,98 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
   </>;
 }
 
-function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onReschedule }: Pick<TaskCallbacks, 'onOpenTask' | 'onReschedule'> & { task: Task; anchor: number; dayWidth: number; width: number; busy: boolean }) {
+function TimelineBar({ task, anchor, dayWidth, width, busy, onOpenTask, onReschedule, dropTarget, onPoolHover, onDragVisual, onFinishVisual, isLifted }: Pick<TaskCallbacks, 'onOpenTask' | 'onReschedule'> & { task: Task; anchor: number; dayWidth: number; width: number; busy: boolean; dropTarget: (x: number, y: number) => 'pool' | 'chart' | null; onPoolHover: (hover: boolean) => void; onDragVisual: (task: Task, x: number, y: number, rect: DOMRect, originX: number, originY: number) => void; onFinishVisual: (success: boolean) => Promise<void>; isLifted: boolean }) {
   const { t } = useTranslation();
   const [preview, setPreview] = useState<{ left: number; width: number } | null>(null);
-  const pointer = useRef<{ id: number; x: number; edge?: RescheduleEdge } | null>(null);
+  const pointer = useRef<{ id: number; x: number; y: number; edge?: RescheduleEdge; moved: boolean; rect: DOMRect } | null>(null);
   const suppressClick = useRef(false);
+  const saving = useRef(false);
   const start = (Date.parse(task.plannedStart!) - anchor) / 86400000 * dayWidth;
   const end = (Date.parse(task.plannedEnd!) - anchor) / 86400000 * dayWidth;
   const left = Math.max(0, start), originalWidth = Math.max(8, Math.min(width, end) - left);
   if (end <= 0 || start >= width) return null;
-  const locked = ['accepted', 'awaiting_acceptance'].includes(task.state);
-  const finishPointer = (event: PointerEvent<HTMLButtonElement>, cancelled = false) => {
+  const locked = ['accepted', 'awaiting_acceptance', 'cancelled'].includes(task.state);
+  const lockedHint = locked ? t("timeline.locked", { state: t(labels[task.state]) }) : '';
+  const saveOffset = async (days: number, edge?: RescheduleEdge) => {
+    if (busy || locked || saving.current || !days) return false;
+    const delta = days * dayWidth;
+    const nextLeft = Math.max(0, start + (edge === 'end' ? 0 : delta));
+    const nextEnd = Math.min(width, end + (edge === 'start' ? 0 : delta));
+    saving.current = true;
+    setPreview({ left: nextLeft, width: Math.max(8, nextEnd - nextLeft) });
+    try {
+      return await onReschedule(task, {
+        plannedStart: new Date(Date.parse(task.plannedStart!) + (edge === 'end' ? 0 : days * 86400000)).toISOString(),
+        plannedEnd: new Date(Date.parse(task.plannedEnd!) + (edge === 'start' ? 0 : days * 86400000)).toISOString(),
+      });
+    } finally { saving.current = false; setPreview(null); }
+  };
+  const finishPointer = async (event: PointerEvent<HTMLButtonElement>, cancelled = false) => {
     const active = pointer.current;
     if (!active || active.id !== event.pointerId) return;
     const distance = event.clientX - active.x;
-    const days = Math.round(distance / dayWidth);
-    pointer.current = null; setPreview(null);
+    const days = Math.sign(distance) * Math.round(Math.abs(distance) / dayWidth * 2) / 2;
+    pointer.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (!cancelled && Math.abs(distance) >= 4) {
+    onPoolHover(false);
+    if (active.moved) {
       suppressClick.current = true;
-      if (days) onReschedule(task, days, active.edge);
       setTimeout(() => { suppressClick.current = false; }, 0);
+      const target = cancelled ? null : dropTarget(event.clientX, event.clientY);
+      let success = false;
+      try {
+        if (!active.edge && target === 'pool') {
+          saving.current = true; setPreview({ left, width: originalWidth });
+          try { success = await onReschedule(task, { plannedStart: null, plannedEnd: null }); }
+          finally { saving.current = false; }
+        } else if (target === 'chart') {
+          success = days ? await saveOffset(days, active.edge) : true;
+        }
+      } finally { if (!success) setPreview(null); if (!active.edge) await onFinishVisual(success); }
     }
+    setPreview(null);
   };
-  return <button type="button" className={`timeline-bar ${preview ? 'is-dragging' : ''}`} disabled={busy}
-    style={{ left: preview?.left ?? left, width: preview?.width ?? originalWidth }}
-    onPointerDown={event => { if (event.button !== 0 || locked) return; pointer.current = { id: event.pointerId, x: event.clientX, edge: (event.target as HTMLElement).dataset.edge as RescheduleEdge | undefined }; event.currentTarget.setPointerCapture(event.pointerId); }}
+  return <button type="button" className={`timeline-bar ${preview ? 'is-dragging' : ''} ${locked ? 'is-locked' : ''}`} aria-busy={saving.current} disabled={busy || saving.current}
+    data-timeline-bar={task.id} style={{ left: preview?.left ?? left, width: preview?.width ?? originalWidth, opacity: isLifted ? 0 : undefined }}
+    onPointerDown={event => { if (event.button !== 0 || busy || locked || saving.current) return; pointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, edge: (event.target as HTMLElement).dataset.edge as RescheduleEdge | undefined, moved: false, rect: event.currentTarget.getBoundingClientRect() }; event.currentTarget.setPointerCapture(event.pointerId); }}
     onPointerMove={event => {
       const active = pointer.current;
       if (!active || active.id !== event.pointerId) return;
       const delta = event.clientX - active.x;
+      if (Math.hypot(delta, event.clientY - active.y) >= 4) active.moved = true;
+      if (!active.edge && active.moved) { onPoolHover(dropTarget(event.clientX, event.clientY) === 'pool'); onDragVisual(task, event.clientX, event.clientY, active.rect, active.x, active.y); }
       if (Math.abs(delta) >= 4) setPreview({ left: left + (active.edge === 'end' ? 0 : delta), width: Math.max(8, originalWidth + (active.edge === 'end' ? delta : active.edge === 'start' ? -delta : 0)) });
     }}
     onPointerUp={event => finishPointer(event)} onPointerCancel={event => finishPointer(event, true)}
-    onClick={() => { if (!suppressClick.current) onOpenTask(task.id); }}
-    onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); onReschedule(task, event.key === 'ArrowLeft' ? -1 : 1, event.shiftKey ? 'end' : undefined); } }}
-    aria-label={t("timeline.range", { title: task.title, value: fmt(task.plannedStart), value2: fmt(task.plannedEnd) })} title={`${fmt(task.plannedStart)} → ${fmt(task.plannedEnd)}`}>
+    onClick={() => { if (!suppressClick.current && !saving.current) onOpenTask(task.id); }}
+    onKeyDown={event => { if (['ArrowLeft', 'ArrowRight'].includes(event.key)) { event.preventDefault(); if (locked || busy || saving.current) return; saveOffset(event.key === 'ArrowLeft' ? -0.5 : 0.5, event.shiftKey ? 'end' : undefined); } }}
+    aria-label={t("timeline.range", { title: task.title, value: fmt(task.plannedStart), value2: fmt(task.plannedEnd) })} title={lockedHint || `${fmt(task.plannedStart)} → ${fmt(task.plannedEnd)}`} aria-description={lockedHint || undefined}>
     {!locked && <span className="resize-handle start" data-edge="start" />}{task.title}{!locked && <span className="resize-handle end" data-edge="end" />}
   </button>;
+}
+
+interface TimelineDragVisual {
+  task: Task; source: 'pool' | 'chart'; left: number; top: number; width: number; height: number;
+  origin: { left: number; top: number; width: number; height: number };
+  ratioX: number; ratioY: number; cardWidth: number; cardHeight: number; barWidth: number;
+  asBar: boolean; settling: boolean;
 }
 
 export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession, onReviewTask, onOpenCodex, onCompleteTask, onReschedule }: Omit<TaskCallbacks, 'onTransition' | 'onConfirmSession'> & { tasks: Task[]; projects: Project[]; busy: boolean }) {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<'day' | 'week' | 'month'>('day');
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
+  const [selected, setSelected] = useState<Task | null>(null);
+  const [dragVisual, setDragVisual] = useState<TimelineDragVisual | null>(null);
+  const dragVisualRef = useRef<TimelineDragVisual | null>(null);
+  const [dropDay, setDropDay] = useState<number | null>(null);
+  const [placing, setPlacing] = useState(false);
+  const placingRef = useRef(false);
+  const canvas = useRef<HTMLDivElement>(null);
+  const pool = useRef<HTMLElement>(null);
+  const [poolHover, setPoolHover] = useState(false);
+  const schedulePointer = useRef<{ id: number; x: number; y: number; task: Task; rect: DOMRect; moved: boolean } | null>(null);
+  const suppressSelectionClick = useRef(false);
   const scheduled = tasks.filter(task => task.plannedStart && task.state !== 'cancelled');
   const unscheduled = tasks.filter(task => !task.plannedStart && !['cancelled', 'accepted'].includes(task.state));
   const [anchor, setAnchor] = useState(() => timelineWindowForTasks(scheduled, 'day').anchor);
@@ -221,6 +271,62 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
     date.setDate(date.getDate() + offset);
     return date.getTime();
   });
+  const schedulable = (task: Task) => !['accepted', 'awaiting_acceptance', 'cancelled'].includes(task.state);
+  const selectedTask = selected && unscheduled.find(task => task.id === selected.id && task.revision === selected.revision && schedulable(task));
+  const dayAtPointer = (event: Pick<PointerEvent, 'clientX' | 'clientY'>, tolerance = 0) => {
+    const rect = canvas.current?.getBoundingClientRect();
+    const viewport = canvas.current?.parentElement?.getBoundingClientRect();
+    const axisBottom = canvas.current?.firstElementChild?.getBoundingClientRect().bottom;
+    if (!rect || !viewport || event.clientX < viewport.left - tolerance || event.clientX > viewport.right + tolerance || event.clientY < (axisBottom ?? rect.top) - tolerance || event.clientY > rect.bottom + tolerance) return null;
+    return Math.max(0, Math.min(days - 0.5, Math.floor((event.clientX - rect.left) / dayWidth * 2) / 2));
+  };
+  const showDropPreview = !!selectedTask && dropDay !== null;
+  const placeTask = async (task: Task, day: number) => {
+    if (!schedulable(task) || busy || placingRef.current) return;
+    const start = new Date(anchor + day * 86400000);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    placingRef.current = true; setPlacing(true); setDropDay(day);
+    try {
+      const success = await onReschedule(task, { plannedStart: start.toISOString(), plannedEnd: end.toISOString() });
+      await finishVisual(success);
+    } finally { placingRef.current = false; setPlacing(false); setDropDay(null); setSelected(null); }
+  };
+  const dropTarget = (x: number, y: number) => {
+    const rect = pool.current?.getBoundingClientRect();
+    if (rect && x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom) return 'pool' as const;
+    return dayAtPointer({ clientX: x, clientY: y }) !== null ? 'chart' as const : null;
+  };
+  const updateVisual = (task: Task, source: 'pool' | 'chart', x: number, y: number, rect: DOMRect, originX: number, originY: number) => {
+    const current = dragVisualRef.current;
+    const poolCard = pool.current?.querySelector('.timeline-unscheduled-task')?.getBoundingClientRect();
+    const base = current ?? {
+      task, source, origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      ratioX: (originX - rect.left) / rect.width, ratioY: (originY - rect.top) / rect.height,
+      cardWidth: source === 'pool' ? rect.width : poolCard?.width || 240,
+      cardHeight: source === 'pool' ? rect.height : poolCard?.height || 154,
+      barWidth: source === 'chart' ? rect.width : dayWidth,
+    };
+    const target = source === 'pool' ? (dayAtPointer({ clientX: x, clientY: y }, 14) !== null ? 'chart' : null) : dropTarget(x, y);
+    const asBar = source === 'pool' ? target === 'chart' : target !== 'pool';
+    const nextWidth = asBar ? base.barWidth : base.cardWidth, nextHeight = asBar ? 28 : base.cardHeight;
+    const visual = { ...base, left: x - base.ratioX * nextWidth, top: y - base.ratioY * nextHeight, width: nextWidth, height: nextHeight, asBar, settling: false };
+    dragVisualRef.current = visual; setDragVisual(visual);
+  };
+  const finishVisual = async (success: boolean) => {
+    const visual = dragVisualRef.current;
+    if (!visual) return;
+    // Wait for the saved task to render before measuring its destination.
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    const card = pool.current?.querySelector(`[data-timeline-card="${visual.task.id}"]`);
+    const bar = canvas.current?.querySelector(`[data-timeline-bar="${visual.task.id}"]`);
+    const destination = success ? card || bar : visual.source === 'pool' ? card : bar;
+    const rect = destination?.getBoundingClientRect() ?? visual.origin;
+    const asBar = success ? !card : visual.source === 'chart';
+    const next = { ...visual, left: rect.left, top: rect.top, width: rect.width, height: rect.height, asBar, settling: true };
+    dragVisualRef.current = next; setDragVisual(next);
+    await new Promise(resolve => setTimeout(resolve, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 180));
+    dragVisualRef.current = null; setDragVisual(null);
+  };
   return <div className="execution-timeline">
     <div className="timeline-toolbar"><span><CalendarRange size={15} />{t("timeline.window", { count: scheduled.length })}</span>
       {(outside.earlier.length > 0 || outside.later.length > 0) && <div className="timeline-window-actions" role="status">
@@ -232,14 +338,50 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
         <div className="segmented-control timeline-zoom" aria-label={t("timeline.granularity")}>{([['day', t("timeline.day")], ['week', t("timeline.week")], ['month', t("timeline.month")]] as const).map(([value, label]) => <button key={value} className={zoom === value ? 'is-active' : ''} aria-pressed={zoom === value} onClick={() => setZoom(value)}>{label}</button>)}</div>
       </div>
     </div>
-    <div className="timeline-table"><div className="timeline-label-column"><div className="timeline-label-heading">{t("timeline.taskProject")}</div>{visibleScheduled.map(task => <div className="timeline-task-label" key={task.id}><button className="quiet" onClick={() => onOpenTask(task.id)} title={task.title}>{task.title}</button><small>{projects.find(project => project.id === task.projectId)?.title || t("project.none")} · {t(labels[task.state])}</small></div>)}</div>
-      <div className="timeline-scroll" tabIndex={0} aria-label={t("timeline.axis")}><div className="timeline-canvas" style={{ width }}>
+    <div className={`timeline-table ${showDropPreview ? 'is-drop-target' : ''}`}><div className="timeline-label-column"><div className="timeline-label-heading">{t("timeline.taskProject")}</div>{visibleScheduled.map(task => <div className="timeline-task-label" key={task.id}><button className="quiet" onClick={() => onOpenTask(task.id)} title={task.title}>{task.title}</button><small>{projects.find(project => project.id === task.projectId)?.title || t("project.none")} · {t(labels[task.state])}</small></div>)}{showDropPreview && selectedTask && <div className="timeline-task-label"><strong>{selectedTask.title}</strong><small>{placing ? t("common.saving") : t("timeline.dropHint")}</small></div>}</div>
+      <div className="timeline-scroll" tabIndex={0} aria-label={t("timeline.axis")}><div className="timeline-canvas" ref={canvas} style={{ width }}>
         <div className="timeline-axis" style={{ gridTemplateColumns: axisColumns.map(columnWidth => `${columnWidth}px`).join(' ') }}>{axisColumns.map((_, index) => <span key={index}><strong>{new Date(anchor + index * step * 86400000).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' })}</strong></span>)}</div>
-        {visibleScheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy} onOpenTask={onOpenTask} onReschedule={onReschedule} /></div>)}
-        {!visibleScheduled.length && <p className="empty-state">{t("timeline.empty")}</p>}
+        {visibleScheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy || (!!dragVisual && dragVisual.task.id !== task.id)} onOpenTask={onOpenTask} onReschedule={onReschedule} dropTarget={dropTarget} onPoolHover={setPoolHover} isLifted={dragVisual?.task.id === task.id} onDragVisual={(task, x, y, rect, originX, originY) => updateVisual(task, 'chart', x, y, rect, originX, originY)} onFinishVisual={finishVisual} /></div>)}
+        {(showDropPreview || !visibleScheduled.length) && <div className="timeline-row timeline-drop-row" style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties} aria-busy={placing}>
+          <span className="timeline-drop-hint">{t("timeline.dropHint")}</span>
+          {selectedTask && dropDay !== null && <span className="timeline-drop-preview" style={{ left: dropDay * dayWidth, width: dayWidth }}>{placing ? t("common.saving") : ''}</span>}
+        </div>}
       </div></div>
     </div>
-    <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>{t("schedule.unscheduled")}</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask} />)}</div>{!unscheduled.length && <p>{t("timeline.allScheduled")}</p>}</section>
+    <section ref={pool} className={`execution-unscheduled ${poolHover ? 'is-drop-target' : ''}`}><header><span><ListTodo size={15} /><strong>{t("schedule.unscheduled")}</strong></span><em>{unscheduled.length}</em></header><p className="muted">{t("timeline.returnHint")}</p><div>{unscheduled.map(task => <div key={task.id} data-timeline-card={task.id} className={`timeline-unscheduled-task ${schedulable(task) ? 'is-draggable' : ''} ${dragVisual?.task.id === task.id ? 'is-drag-source' : ''}`}
+      onClickCapture={event => { if (suppressSelectionClick.current) { event.preventDefault(); event.stopPropagation(); } }}
+      onPointerDown={event => {
+        if (event.button !== 0 || busy || placingRef.current || dragVisualRef.current || !schedulable(task)) return;
+        const button = (event.target as HTMLElement).closest('button, input, a');
+        if (button && !button.classList.contains('execution-card__title')) return;
+        schedulePointer.current = { id: event.pointerId, x: event.clientX, y: event.clientY, task, rect: event.currentTarget.getBoundingClientRect(), moved: false };
+        (event.target as Element).setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={event => {
+        const active = schedulePointer.current;
+        if (!active || active.id !== event.pointerId || Math.hypot(event.clientX - active.x, event.clientY - active.y) < 4) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        active.moved = true;
+        setSelected(active.task); updateVisual(active.task, 'pool', event.clientX, event.clientY, active.rect, active.x, active.y); setDropDay(dayAtPointer(event, 14));
+      }}
+      onPointerUp={async event => {
+        const active = schedulePointer.current;
+        if (!active || active.id !== event.pointerId) return;
+        schedulePointer.current = null;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        if (!active.moved) return;
+        suppressSelectionClick.current = true; setTimeout(() => { suppressSelectionClick.current = false; }, 0);
+        const day = dayAtPointer(event, 14);
+        if (day !== null) void placeTask(active.task, day); else { setSelected(null); setDropDay(null); await finishVisual(false); }
+      }}
+      onPointerCancel={() => { schedulePointer.current = null; setSelected(null); setDropDay(null); void finishVisual(false); }}>
+        <ExecutionCard task={task} projects={projects} busy={busy || (placing && selected?.id === task.id)} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask} />
+        {!schedulable(task) && <small>{t("timeline.locked", { state: t(labels[task.state]) })}</small>}
+      </div>)}</div>{!unscheduled.length && <p>{t("timeline.allScheduled")}</p>}</section>
+    {dragVisual && createPortal(<div className={`timeline-drag-ghost ${dragVisual.asBar ? 'is-bar' : ''} ${dragVisual.settling ? 'is-settling' : ''}`} aria-hidden="true" inert style={{ left: dragVisual.left, top: dragVisual.top, width: dragVisual.width, height: dragVisual.height }}>
+      <div className="timeline-drag-card"><ExecutionCard task={dragVisual.task} projects={projects} busy={false} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask} /></div>
+      <div className="timeline-drag-bar">{dragVisual.task.title}</div>
+    </div>, document.body)}
     <p className="muted">{t("timeline.controls")}</p>
   </div>;
 }

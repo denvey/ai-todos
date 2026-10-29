@@ -101,7 +101,7 @@ export class Store {
     requireThat(row, 'errors.notFound', 404, { kind }); return JSON.parse(row.body as string);
   }
   check(item: { revision: number }, expected: number) { requireThat(item.revision === expected, "errors.staleRevision", 409); }
-  save<K extends Kind>(kind: K, item: Entity<K>): Entity<K> { this.db.prepare('INSERT OR REPLACE INTO entities VALUES (?,?,?)').run(kind, item.id, JSON.stringify(item)); return item; }
+  save<K extends Kind>(kind: K, item: Entity<K>): Entity<K> { this.db.prepare('INSERT INTO entities (kind,id,body) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body').run(kind, item.id, JSON.stringify(item)); return item; }
   meta<T>(key: string, fallback: T): T { const row = this.db.prepare('SELECT body FROM meta WHERE key=?').get(key); return row ? JSON.parse(row.body as string) : fallback; }
   setMeta<T>(key: string, value: T): T { this.db.prepare('INSERT OR REPLACE INTO meta VALUES (?,?)').run(key, JSON.stringify(value)); return value; }
   event(taskId: string | null, type: string, details: Partial<TaskEvent> = {}) {
