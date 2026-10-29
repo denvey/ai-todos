@@ -101,6 +101,7 @@ export function TaskEditor({ task = {}, history = [], snapshot, busy, onSave, on
     {(editable || next) && <footer className="task-editor__actions">
       {next && <div className="task-editor__next"><strong>{t('task.nextStep')}</strong><small>{t(hasChanges ? 'task.saveBeforeNext' : next.hint)}</small></div>}
       {editable && <button className={next ? '' : 'primary'} type="submit" disabled={busy}><Save size={16} />{busy ? refining ? t("ai.waiting") : t("common.processing") : creating ? t("task.create") : t("common.saveChanges")}</button>}
+      {next?.action === 'start' && <button type="button" disabled={busy || hasChanges} onClick={onComplete}>{t("session.confirm")}</button>}
       {next && <button className="primary" type="button" disabled={busy || hasChanges} onClick={() => next.action === 'complete' ? onComplete() : next.action === 'review' ? onReview() : onOpenCodex()}>{t(next.label)}</button>}
     </footer>}
   </form>;

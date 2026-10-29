@@ -4,7 +4,7 @@ import { getLocale } from '../i18n.ts';
 import type { CSSProperties, DragEvent, PointerEvent } from 'react';
 import type { Task, Project, LiveSession } from '../../src/types.ts';
 import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2, Play } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
 import { runtimeState } from '../../src/runtime.ts';
@@ -37,6 +37,7 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
       <div className="execution-card__buttons">
         {next?.action === 'complete' && task.sessionId && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><ExternalLink size={12} />{t("session.open")}</button>}
+        {next?.action === 'start' && onCompleteTask && <button type="button" disabled={busy} onClick={() => onCompleteTask(task)}><Check size={12} />{t("session.confirm")}</button>}
         {next && <button type="button" className={next.action === 'complete' ? undefined : 'is-next-action'} disabled={busy} onClick={() => next.action === 'start' && onOpenCodex ? onOpenCodex(task) : next.action === 'complete' && onCompleteTask ? onCompleteTask(task) : next.action === 'review' && onReviewTask ? onReviewTask(task) : next.action === 'session' && onOpenSession ? onOpenSession(task.sessionId!) : onOpenTask(task.id)}>{next.action === 'start' ? <Play size={12} /> : next.action === 'review' ? <ListTodo size={12} /> : next.action === 'session' ? <ExternalLink size={12} /> : <Check size={12} />}{t(next.label)}</button>}
       </div>
     </div>
@@ -206,9 +207,7 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
   const scheduled = tasks.filter(task => task.plannedStart && task.state !== 'cancelled');
   const unscheduled = tasks.filter(task => !task.plannedStart && !['cancelled', 'accepted'].includes(task.state));
-  const scheduleKey = scheduled.map(task => `${task.id}:${task.plannedStart}:${task.plannedEnd}`).join('|');
   const [anchor, setAnchor] = useState(() => timelineWindowForTasks(scheduled, 'day').anchor);
-  useEffect(() => { setAnchor(timelineWindowForTasks(scheduled, zoom).anchor); }, [scheduleKey]);
   const days = timelineWindowForTasks(scheduled, zoom).days;
   const dayWidth = { day: 60, week: 26, month: 10 }[zoom], step = { day: 1, week: 7, month: 30 }[zoom], width = dayWidth * days;
   const axisColumns = timelineAxisColumnWidths(days, step, dayWidth);
