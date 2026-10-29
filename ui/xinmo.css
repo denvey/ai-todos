@@ -192,7 +192,8 @@
 .task-pool-entry small { overflow: hidden; color: var(--faint); font-size: var(--fs-caption); text-overflow: ellipsis; white-space: nowrap; }
 .task-pool-entry .task-pool-entry__action { display: flex; grid-auto-flow: column; align-items: center; gap: 2px; color: var(--accent-strong); font-size: var(--fs-caption); font-weight: 650; white-space: nowrap; }
 .priority-segment, .mode-segment { display: grid; height: 36px; padding: 3px; border: 0; border-radius: 9px; background: var(--fill); }
-.priority-segment { grid-template-columns: repeat(3, 1fr); }
+.priority-segment { grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; min-height: 36px; gap: 3px; border: 1px solid var(--line); }
+.priority-segment button { min-width: 0; min-height: 28px; padding: 4px 10px; }
 .priority-segment button, .mode-segment button { border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer; transition: color 140ms ease-out; }
 .priority-segment button.is-active, .mode-segment button.is-active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px oklch(0 0 0 / 0.12); }
 .priority-segment button:disabled, .mode-segment button:disabled { opacity: 0.4; cursor: default; }
@@ -298,7 +299,7 @@
 .delete-task:hover { background: color-mix(in oklch, var(--danger) 14%, transparent); color: var(--danger); }
 .text-button.is-destructive { color: var(--danger); }
 .text-button.is-destructive:hover { background: color-mix(in oklch, var(--danger) 10%, transparent); }
-.task-definition { display: grid; gap: 12px; padding: 12px; border: 1px solid color-mix(in oklch, var(--accent) 24%, var(--line)); border-radius: var(--r-md); background: color-mix(in oklch, var(--accent) 3%, var(--surface)); }
+.task-definition { display: grid; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: color-mix(in oklch, var(--accent) 3%, var(--surface)); }
 .task-definition__header, .acceptance-definition__heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .task-definition__header > span, .acceptance-definition__heading > span { min-width: 0; display: grid; gap: 2px; }
 .task-definition__header strong, .acceptance-definition__heading strong { color: var(--ink); font-size: 12px; font-weight: 680; }
@@ -320,7 +321,6 @@
 .task-definition__ai-preview > footer button { min-height: 32px; }
 .project-path { margin: 0; color: var(--faint); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 .priority-field legend { padding: 0 0 6px; }
-.priority-segment button.is-active { background: var(--accent); color: oklch(0.99 0 0); box-shadow: none; }
 .codex-settings, .editor-advanced { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
 .codex-settings > summary, .editor-advanced > summary { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 9px 12px; border-radius: var(--r-md); color: var(--muted); cursor: pointer; list-style: none; user-select: none; }
 .codex-settings > summary::-webkit-details-marker, .editor-advanced > summary::-webkit-details-marker { display: none; }
@@ -420,8 +420,8 @@
 .execution-card__topline { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); color: var(--muted); font-size: var(--fs-caption); }
 .execution-card__body > small { color: var(--muted); font-size: var(--fs-caption); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .execution-card .execution-card__primary { justify-content: space-between; align-items: center; flex-wrap: wrap; padding-top: 0; }
-.execution-card .execution-card__primary button { flex: none; border-color: transparent; background: transparent; }
-.execution-card .execution-card__primary button:hover { background: var(--fill); }
+.execution-card .execution-card__primary button { flex: none; border-color: transparent; background: transparent; box-shadow: none; }
+.execution-card .execution-card__primary button:hover:not(:disabled) { border-color: transparent; background: var(--fill); }
 .execution-card__badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .execution-session-card { cursor: default; }
 .execution-session-card[draggable="true"] { cursor: grab; }
