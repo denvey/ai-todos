@@ -437,6 +437,8 @@
 .execution-card__actions button:disabled, .codex-request button:disabled, .execution-inline-action button:disabled { opacity: 0.45; cursor: not-allowed; }
 .execution-status, .execution-dependency { display: inline-flex; align-items: center; gap: 3px; min-height: 19px; padding: 2px 6px; border-radius: 10px; background: var(--fill); color: var(--muted); font-size: 9.5px; font-weight: 600; }
 .execution-status.status-running, .execution-status.status-queued, .execution-status.status-executing { background: var(--accent-soft); color: var(--accent-strong); }
+.execution-status.status-running::before { content: ""; flex: none; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; background: #22c55e; animation: focus-pulse 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .execution-status.status-running::before { animation: none; } }
 .execution-status.status-waiting_approval, .execution-status.status-waiting_input, .execution-status.status-awaiting_acceptance, .execution-status.status-idle, .execution-status.status-completed { background: color-mix(in oklch, var(--warning) 11%, transparent); color: var(--warning); }
 .execution-status.status-failed, .execution-status.status-changes_requested { background: color-mix(in oklch, var(--danger) 10%, transparent); color: var(--danger); }
 .execution-timeline { min-width: 0; display: grid; gap: var(--sp-3); }

@@ -8,7 +8,7 @@ import type { Modal, Decision, FocusOperation, RescheduleEdge, TaskCallbacks } f
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
-import { Plus, RefreshCw, Search, Settings } from 'lucide-react';
+import { Maximize2, Plus, RefreshCw, Search, Settings } from 'lucide-react';
 import { DatePickerField, SelectField } from './components/FormControls.tsx';
 import { BoardView, ExecutionCard, TimelineView } from './components/ExecutionView.tsx';
 import { TaskEditor, EditorDialog, Field, ScheduleFields, Delivery } from './components/TaskEditor.tsx';
@@ -23,7 +23,7 @@ import './style.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, {}, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, { availableDisplayModes: ['inline', 'fullscreen'] }, { autoResize: true }) : null;
 const mainPages = { today: 'nav.today', work: 'nav.work', projects: 'nav.projects', okr: 'nav.okr' } as const;
 const pages: Record<string, TranslationKey> = { ...mainPages, inbox: 'nav.inbox', plans: 'nav.plans', settings: 'nav.settings' };
 const singular: Record<string, TranslationKey> = { task: 'entity.task', project: 'entity.project', objective: 'entity.objective', keyResult: 'entity.keyResult', plan: 'entity.plan' };
@@ -139,6 +139,7 @@ function Workspace() {
   const { t } = useTranslation();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connectionError, setConnectionError] = useState('');
+  const [hostContext, setHostContext] = useState<ReturnType<App['getHostContext']>>();
   const [threadTransport, setThreadTransport] = useState<string | null>(null);
   const [view, setView] = useState({ page: 'today', mode: 'board', project: '', search: '' });
   const [modal, setModal] = useState<Modal | null>(null);
@@ -166,6 +167,12 @@ function Workspace() {
     finally { busyRef.current = false; setBusy(false); }
   };
   const open = (value: Modal) => { setError(''); setModal({ ...value, key: crypto.randomUUID() }); };
+  const fullscreen = () => run(async () => {
+    const result = await bridge!.requestDisplayMode({ mode: 'fullscreen' });
+    console.info('[ai-todos] display mode request', { requested: 'fullscreen', actual: result.mode });
+    setHostContext({ ...bridge!.getHostContext(), displayMode: result.mode });
+    if (result.mode !== 'fullscreen') throw new Error(t('connection.fullscreenDenied'));
+  });
   const openTask = (id: string, returnTo?: Modal) => run(async () => { const detail = await api('task', { id }); open({ type: 'task', ...detail, returnTo }); });
   const openEntity = (kind: Kind, entity?: Entity | null, parent?: string) => open({ type: kind === 'task' ? 'task' : 'entity', kind, entity: entity ?? undefined, parent, requestId: crypto.randomUUID() });
   const deleteEntity = (kind: Kind, entity: Entity) => open({ type: 'delete', kind, entity, returnTo: modalRef.current?.returnTo });
@@ -205,7 +212,7 @@ function Workspace() {
     const result = await syncThreads(); toast(t("session.synced", { count: result.count, value: result.transport === 'history' ? t("connection.historyOnly") : '' }));
   });
   const openSession = (id: string) => run(() => openCodexSession(id));
-  const confirmSession: TaskCallbacks['onConfirmSession'] = async session => {
+  const confirmSession: TaskCallbacks['onConfirmSession'] = async (session, silent = false) => {
     try {
       const confirmed = await api('session-confirm', { id: session.id, observedAt: session.observedAt, event: session.event, turnId: session.turnId ?? null, catalogUpdatedAt: session.catalogUpdatedAt ?? null, confirmed: true });
       // Let an earlier snapshot finish so it cannot overwrite this confirmation.
@@ -213,8 +220,8 @@ function Workspace() {
       const current = snapshotRef.current!;
       const next = { ...current, sessions: current.sessions.map(item => item.id === confirmed.id && item.observedAt === confirmed.observedAt && item.event === confirmed.event && (item.turnId ?? null) === (confirmed.turnId ?? null) && (item.catalogUpdatedAt ?? null) === (confirmed.catalogUpdatedAt ?? null) ? { ...item, confirmedAt: confirmed.confirmedAt } : item) };
       snapshotRef.current = next; setSnapshot(next);
-      toast(t("session.confirmed")); return true;
-    } catch (reason) { toast(reason instanceof Error ? reason.message : String(reason)); return false; }
+      if (!silent) toast(t("session.confirmed")); return true;
+    } catch (reason) { if (!silent) toast(reason instanceof Error ? reason.message : String(reason)); return false; }
   };
   const createToday = (draft?: TaskDraft, onCreated?: () => void) => open({ type: 'task', draft, onCreated, planDate: localDay(new Date()), requestId: crypto.randomUUID() });
   const addToday = (data: TaskDraft[], requestId: string) => run(() => mutate({ action: 'create_tasks', data, requestId, planDate: localDay(new Date()) }), data.length > 1 ? t("today.splitAdded", { count: data.length }) : t("today.added"));
@@ -244,7 +251,11 @@ function Workspace() {
     const boot = async () => {
       try {
         if (embedded) {
-          const applyHostContext = (context: ReturnType<App["getHostContext"]>) => { if (context?.locale) applyHostLocale(context.locale); if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts); };
+          const applyHostContext = (context: ReturnType<App["getHostContext"]>) => {
+            setHostContext(bridge!.getHostContext());
+            if (context?.displayMode !== undefined || context?.availableDisplayModes !== undefined) console.info('[ai-todos] host display mode', { mode: bridge!.getHostContext()?.displayMode, available: bridge!.getHostContext()?.availableDisplayModes });
+            if (context?.locale) applyHostLocale(context.locale); if (context?.theme) applyDocumentTheme(context.theme); if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables); if (context?.styles?.css?.fonts) applyHostFonts(context.styles.css.fonts);
+          };
           bridge!.onhostcontextchanged = applyHostContext;
           bridge!.ontoolresult = result => { if (result.structuredContent && typeof result.structuredContent === 'object' && 'tasks' in result.structuredContent) refresh(true).catch(reason => toast((reason instanceof Error ? reason.message : String(reason)))); };
           await bridge!.connect(); applyHostContext(bridge!.getHostContext());
@@ -321,7 +332,7 @@ function Workspace() {
   }
   return <><main className={`main ${view.page === 'work' && view.mode === 'board' ? 'is-board' : ''} ${snapshot.focus.status !== 'idle' ? 'has-focus' : ''}`}>
     <nav className="nav" aria-label={t("nav.label")}>{Object.entries(mainPages).map(([page, label]) => <button key={page} disabled={busy} aria-current={mainPage === page ? 'page' : undefined} className={mainPage === page ? 'active' : ''} onClick={() => setViewValue('page', page)}>{t(label)}</button>)}<button className={`nav-settings ${view.page === 'settings' ? 'active' : ''}`} disabled={busy} aria-current={view.page === 'settings' ? 'page' : undefined} onClick={() => setViewValue('page', 'settings')}><Settings size={16} aria-hidden="true" />{t("nav.settings")}</button></nav>
-    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>{t("nav.today")}</button><span className="muted" aria-hidden="true">/</span></>}<h1>{t(pages[view.page])}</h1></div><div className="row">{embedded && <button className="quiet small" disabled={busy} onClick={() => run(() => openLocal())}>{t("connection.openLocal")}</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>{t("nav.plans")}</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />{t("project.sync")}</button>}<button className="quiet small" disabled={busy} onClick={view.page === 'work' ? syncWorkspace : () => run(() => refresh(true))}><RefreshCw size={14} />{t("common.refresh")}</button>{newKind && <button className="primary" disabled={busy} onClick={() => openEntity(newKind)}><Plus size={15} />{t("entity.new", { value: t(singular[newKind]) })}</button>}</div></header>
+    <header className="page-header"><div className="row">{['inbox', 'plans'].includes(view.page) && <><button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'today')}>{t("nav.today")}</button><span className="muted" aria-hidden="true">/</span></>}<h1>{t(pages[view.page])}</h1></div><div className="row">{hostContext?.availableDisplayModes?.includes('fullscreen') && hostContext.displayMode !== 'fullscreen' && <button className="quiet small" disabled={busy} onClick={fullscreen}><Maximize2 size={14} aria-hidden="true" />{t('connection.fullscreen')}</button>}{view.page === 'today' && <button className="quiet small" disabled={busy} onClick={() => setViewValue('page', 'plans')}>{t("nav.plans")}</button>}{view.page === 'projects' && <button className="quiet small" disabled={busy} onClick={syncProjects}><RefreshCw size={14} />{t("project.sync")}</button>}<button className="quiet small" disabled={busy} onClick={view.page === 'work' ? syncWorkspace : () => run(() => refresh(true))}><RefreshCw size={14} />{t("common.refresh")}</button>{newKind && <button className="primary" disabled={busy} onClick={() => openEntity(newKind)}><Plus size={15} />{t("entity.new", { value: t(singular[newKind]) })}</button>}</div></header>
     {connectionError && <p className="error" role="alert">{t("connection.unavailable")}{connectionError}</p>}
     {view.page === 'today' && <section className="card home-focus" aria-labelledby="focus-stats-title"><div className="row spaced"><h2 id="focus-stats-title">{t("focus.stats")}</h2><DatePickerField label={t("focus.statsDate")} value={statsDate} onValueChange={setStatsDate} /></div><div className="summary"><div><p>{statsDate === localDay(new Date()) ? t("focus.todayTime") : t("focus.dateTime")}</p><div className="number">{hours(dayRows.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>{t("focus.totalTime")}</p><div className="number">{hours(totals.reduce((sum, row) => sum + row.ms, 0))}</div></div><div><p>{t("focus.recordCount")}</p><div className="number">{number(snapshot.timeRecords.length)}</div></div></div>
       <details><summary>{t("focus.details")}</summary>

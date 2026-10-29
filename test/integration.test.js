@@ -52,6 +52,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const open = tools.tools.find(t => t.name === 'ai_todos_open'); assert.deepEqual(open._meta['openai/ui'].entrypoints, [{ type: 'global' }, { type: 'thread' }]);
   const resources = await client.listResources(); assert.equal(resources.resources[0].uri, 'ui://ai-todos/app.html');
   const resource = await client.readResource({ uri: 'ui://ai-todos/app.html' }); assert.equal(resource.contents[0].mimeType, 'text/html;profile=mcp-app'); assert.ok(resource.contents[0].text.includes(origin));
+  assert.deepEqual(resource.contents[0]._meta['openai/ui'].availableDisplayModes, ['inline', 'fullscreen']);
   const opened = await client.callTool({ name: 'ai_todos_open', arguments: {} }); assert.equal(opened.structuredContent.browserUrl, origin);
   const command = async c => {
     const result = await client.callTool({ name: 'ai_todos_manage', arguments: { command: c } });

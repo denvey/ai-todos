@@ -5,7 +5,7 @@ import type { CSSProperties, DragEvent, PointerEvent } from 'react';
 import type { Task, Project, LiveSession } from '../../src/types.ts';
 import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
 import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, Code2 } from 'lucide-react';
+import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2 } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
 import { runtimeState } from '../../src/runtime.ts';
 import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, taskNextStep, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
@@ -76,18 +76,39 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [showCompletedHistory, setShowCompletedHistory] = useState(false);
   const [sessionLimits, setSessionLimits] = useState<Record<string, number>>({});
+  const batchRunning = useRef(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const confirming = useRef(new Set<string>());
   const [confirmingSessions, setConfirmingSessions] = useState<string[]>([]);
   const confirmSession: TaskCallbacks['onConfirmSession'] = async session => {
-    if (busy || confirming.current.has(session.id)) return false;
+    if (busy || batchRunning.current || confirming.current.has(session.id)) return false;
     confirming.current.add(session.id); setConfirmingSessions([...confirming.current]);
     try { return await onConfirmSession(session); }
     finally { confirming.current.delete(session.id); setConfirmingSessions([...confirming.current]); }
   };
+  const confirmableSessions = sessions.filter(session => canConfirmAiSession(session, allTasks));
+  const confirmAllSessions = async () => {
+    if (busy || batchRunning.current || confirming.current.size || !confirmableSessions.length) return;
+    batchRunning.current = true;
+    const pending = [...confirmableSessions];
+    let succeeded = 0;
+    setBatchProgress({ done: 0, total: pending.length });
+    try {
+      for (const [index, session] of pending.entries()) {
+        try { if (await onConfirmSession(session, true)) succeeded++; }
+        catch { /* Keep processing the remaining sessions after an individual failure. */ }
+        setBatchProgress({ done: index + 1, total: pending.length });
+      }
+      onError(t("session.confirmAllResult", { succeeded, failed: pending.length - succeeded }));
+    } finally {
+      batchRunning.current = false;
+      setBatchProgress(null);
+    }
+  };
   const endDrag = () => setDropTarget(null);
   const renderTask = (task: Task) => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos', JSON.stringify({ id: value.id, revision: value.revision })); }} onDragEnd={endDrag} />;
-  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy || confirmingSessions.includes(session.id)} onOpenSession={onOpenSession} onConfirmSession={confirmSession}
+  const renderSession = (session: LiveSession) => <SessionCard key={session.id} session={session} tasks={allTasks} projects={projects} busy={busy || !!batchProgress || confirmingSessions.includes(session.id)} onOpenSession={onOpenSession} onConfirmSession={confirmSession}
     onDragStart={(event, value) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/ai-todos-session', JSON.stringify({ id: value.id, observedAt: value.observedAt, event: value.event, turnId: value.turnId, catalogUpdatedAt: value.catalogUpdatedAt })); }} onDragEnd={endDrag} />;
   const completedItems = [
     ...tasks.filter(task => executionColumnForTask(task) === 'completed').map(task => ({ kind: 'task' as const, value: task, at: task.review?.at || task.updatedAt })),
@@ -124,7 +145,8 @@ export function BoardView({ tasks, allTasks = tasks, sessions = [], projects, bu
             } else onTransition(task.id, value.revision, 'executing');
           } catch (error) { onError(error instanceof Error ? error.message : String(error)); }
         }}>
-        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length })}{sessionItems.length > 0 && <> · {t("board.sessionCount", { count: sessionItems.length })}</>}</em></header>
+        <header><span><i aria-hidden="true" /><strong id={`execution-column-${column.id}`}>{t(column.label)}</strong></span><em>{t("board.taskCount", { count: items.length })}{sessionItems.length > 0 && <> · {t("board.sessionCount", { count: sessionItems.length })}</>}</em>
+        {column.id === 'waiting_user' && (confirmableSessions.length > 0 || batchProgress) && <button type="button" className="execution-column__bulk" disabled={busy || !!batchProgress || confirmingSessions.length > 0} title={batchProgress ? t("session.confirmAllProgress", batchProgress) : `${t("session.confirmAll")}：${t("session.confirmAllHint")}`} aria-label={batchProgress ? t("session.confirmAllProgress", batchProgress) : t("session.confirmAll")} aria-live="polite" onClick={confirmAllSessions}>{batchProgress ? <LoaderCircle size={14} aria-hidden="true" /> : <CheckCheck size={14} aria-hidden="true" />}</button>}</header>
         <div className="execution-column__tasks" tabIndex={0} aria-label={t("board.cards", { label: t(column.label) })}>
           {completed ? completedItems.slice(0, showCompletedHistory ? undefined : 5).map(item => item.kind === 'task' ? renderTask(item.value) : renderSession(item.value)) : <>{items.map(renderTask)}{sessionItems.slice(0, sessionLimits[column.id] || 50).map(renderSession)}</>}
           {!completed && sessionItems.length > (sessionLimits[column.id] || 50) && <button type="button" className="execution-column__history" onClick={() => setSessionLimits(current => ({ ...current, [column.id]: (current[column.id] || 50) + 50 }))}>{t("board.moreSessions", { count: sessionItems.length - (sessionLimits[column.id] || 50) })}</button>}
