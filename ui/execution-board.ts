@@ -57,11 +57,12 @@ export function taskNextStep(task: Pick<Task, 'state' | 'ai' | 'sessionId'>): { 
   }
   return { action: 'complete', label: 'session.confirm', hint: 'task.nextComplete' };
 }
-export function executionColumnForSession(session: Pick<LiveSession, 'state' | 'confirmedAt'>) {
+export function executionColumnForSession(session: Pick<LiveSession, 'state' | 'confirmedAt'> & Partial<Pick<LiveSession, 'observedState'>>) {
   const state = runtimeState(session.state);
   if (state === 'running' || state === 'queued') return 'executing';
   if (session.confirmedAt && ['idle', 'completed'].includes(state)) return 'completed';
-  if (['waiting_input', 'waiting_approval', 'failed', 'idle', 'completed'].includes(state)) return 'waiting_user';
+  if (['waiting_input', 'waiting_approval', 'failed', 'interrupted', 'idle', 'completed'].includes(state)) return 'waiting_user';
+  if (state === 'unknown' && ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(runtimeState(session.observedState))) return 'waiting_user';
   return null;
 }
 export function canConfirmAiSession(session: Pick<LiveSession, 'id' | 'state' | 'confirmedAt'>, tasks: Pick<Task, 'sessionId' | 'state'>[]) {

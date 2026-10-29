@@ -179,8 +179,8 @@ async function listProjects() {
   }, 15000);
 }
 
-async function rolloutObservation(thread: z.output<typeof threadPageSchema>["data"][number]) {
-  if (thread.status.type !== 'notLoaded' || !thread.path || Date.now() - thread.updatedAt * 1000 > 300000) return;
+async function rolloutObservation(thread: z.output<typeof threadPageSchema>["data"][number], trackedActive: boolean) {
+  if (thread.status.type !== 'notLoaded' || !thread.path || (!trackedActive && Date.now() - thread.updatedAt * 1000 > 300000)) return;
   const input = createReadStream(thread.path), lines = createInterface({ input, crlfDelay: Infinity });
   let matched = false, latestAt = '', observation: { state: string; observedAt: string; event: string; source: string; turnId: string | null } | undefined;
   try {
@@ -204,7 +204,8 @@ async function rolloutObservation(thread: z.output<typeof threadPageSchema>["dat
   finally { lines.close(); input.destroy(); }
 }
 
-async function listThreads() {
+async function listThreads(store: Store) {
+  const trackedActive = new Set(store.sessions().filter(session => ['queued', 'running', 'waiting_approval', 'waiting_input'].includes(session.observedState)).map(session => session.id));
   const read = async ({ request }: CodexConnection) => {
     const threads: CodexThread[] = [], cursors = new Set<string | null>(); let cursor: string | null = null;
     do {
@@ -214,7 +215,7 @@ async function listThreads() {
         const requestIndex = thread.preview.startsWith('# Files mentioned by the user:') ? thread.preview.indexOf('## My request:') : -1;
         const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + '## My request:'.length) : thread.preview).trim();
         const title = (thread.name?.trim() || preview.replace(/\s+/g, ' ') || `Codex · ${basename(thread.cwd)} · ${thread.id.slice(-8)}`).slice(0, 300);
-        const observation = await rolloutObservation(thread);
+        const observation = await rolloutObservation(thread, trackedActive.has(thread.id));
         const state = observation?.state ?? codexRuntimeState(thread.status);
         threads.push({ id: thread.id, title, preview: preview.slice(0, 20000), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1000).toISOString(), state, ...(observation ? { observation } : {}) });
       }
@@ -277,7 +278,7 @@ export async function codexAction(store: Store, raw: unknown) {
   if (input.operation === 'open_session') return openSession(store, input.id, input.prefillTask, input.locale);
   if (input.operation === 'sync_projects') return store.syncCodexProjects(await listProjects());
   if (input.operation === 'sync_threads') {
-    const result = await listThreads();
+    const result = await listThreads(store);
     return { ...store.syncCodexThreads(result.threads), transport: result.transport };
   }
   const project = input.draft.projectId ? store.get('project', input.draft.projectId) : null;
