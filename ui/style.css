@@ -143,6 +143,12 @@ th{font-weight:500;color:var(--muted)}
 .timeline-task-label button{padding:0;justify-content:start;text-align:left;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;display:block}
 .resize-handle{position:absolute;top:0;bottom:0;width:8px;cursor:ew-resize}
 .timeline-bar .resize-handle{width:8px;overflow:visible}
+.timeline-bar.is-locked{cursor:pointer;touch-action:auto}
+.timeline-bar[aria-busy="true"]{opacity:1;cursor:progress}
+.timeline-drop-row{position:relative}
+.timeline-drop-hint{position:sticky;left:12px;display:inline-block;padding:18px 12px;color:var(--muted);font-size:12px;pointer-events:none}
+.timeline-drop-preview{position:absolute;top:15px;height:28px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:1px dashed var(--accent);border-radius:7px;background:var(--fill-2);color:var(--ink);font-size:11px;padding:4px;pointer-events:none}
+.timeline-unscheduled-task{display:grid;gap:6px;align-content:start}
 .resize-handle.start{left:0}
 .resize-handle.end{right:0}
 .objective-progress{--progress:0%;display:grid;place-items:center;width:54px;height:54px;border-radius:50%;background:conic-gradient(var(--accent) var(--progress),var(--fill-2) 0);position:relative}
@@ -194,3 +200,20 @@ th{font-weight:500;color:var(--muted)}
 .execution-column > header:has(.execution-column__bulk){grid-template-columns:minmax(0,1fr) auto auto;gap:6px}
 .execution-column__bulk{display:inline-flex;align-items:center;justify-content:center;width:24px;min-height:24px;padding:0;border:0;background:transparent;color:var(--muted);box-shadow:none}
 .execution-column__bulk:hover:not(:disabled){color:var(--ink);background:var(--fill)}
+
+.timeline-unscheduled-task.is-draggable{cursor:grab;touch-action:none;user-select:none}
+.execution-unscheduled.is-drop-target{outline:2px dashed var(--accent);background:var(--fill-2)}
+
+/* Keep source geometry while the single floating task moves between surfaces. */
+.timeline-unscheduled-task.is-drag-source{opacity:0;cursor:grabbing}
+.timeline-unscheduled-task.is-draggable .execution-card__title{cursor:grab}
+.timeline-table.is-drop-target{outline:2px solid var(--accent);outline-offset:2px}
+.timeline-drag-ghost{position:fixed;z-index:10000;pointer-events:none;border-radius:12px;overflow:hidden;background:var(--surface);color:var(--ink);box-shadow:0 12px 32px #0004;transition:width .18s ease,height .18s ease,border-radius .18s ease;cursor:grabbing}
+.timeline-drag-card{position:absolute;inset:0;opacity:1;transition:opacity .14s ease}
+.timeline-drag-card .execution-card{height:100%;box-sizing:border-box;margin:0}
+.timeline-drag-bar{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 8px;border:1px solid var(--accent);border-radius:7px;background:var(--fill-2);font-size:11px;white-space:nowrap;overflow:hidden;opacity:0;transition:opacity .14s ease}
+.timeline-drag-ghost.is-bar{border-radius:7px}
+.timeline-drag-ghost.is-bar .timeline-drag-card{opacity:0}
+.timeline-drag-ghost.is-bar .timeline-drag-bar{opacity:1}
+.timeline-drag-ghost.is-settling{transition:left .18s ease,top .18s ease,width .18s ease,height .18s ease,border-radius .18s ease}
+@media(prefers-reduced-motion:reduce){.timeline-drag-ghost,.timeline-drag-card,.timeline-drag-bar,.timeline-drag-ghost.is-settling{transition:none}}

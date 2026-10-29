@@ -55,6 +55,81 @@ test('workflow allows empty criteria and requires evidence and explicit human re
   assert.throws(() => transition(s, task, 'defining', 'model'), /由人/);
 });
 
+test('saving dates preserves task row order across snapshots and reopening the store', t => {
+  const { store: s, path } = fixture(t);
+  const first = create(s, 'task', { title: '第一行' });
+  const second = create(s, 'task', { title: '第二行' });
+  s.command({ action: 'update', kind: 'task', id: first.id, revision: first.revision, data: { plannedStart: '2026-10-30T00:00:00Z', plannedEnd: '2026-10-31T00:00:00Z' } });
+  assert.deepEqual(s.snapshot().tasks.map(task => task.id), [first.id, second.id]);
+  const reopened = new Store(path);
+  try { assert.deepEqual(reopened.snapshot().tasks.map(task => task.id), [first.id, second.id]); }
+  finally { reopened.close(); }
+});
+
+test('an unscheduled task can be scheduled directly with the existing update command', t => {
+  const { store: s } = fixture(t);
+  const task = create(s, 'task', { title: '拖入时间轴' });
+  assert.equal(task.plannedStart, null);
+  const dates = { plannedStart: '2026-10-29T16:00:00.000Z', plannedEnd: '2026-10-30T16:00:00.000Z' };
+  const scheduled = s.command({ action: 'update', kind: 'task', id: task.id, revision: task.revision, data: dates });
+  assert.equal(scheduled.plannedStart, dates.plannedStart);
+  assert.equal(scheduled.plannedEnd, dates.plannedEnd);
+  assert.equal(scheduled.state, 'defining');
+  assert.equal(scheduled.revision, task.revision + 1);
+  const moved = s.command({ action: 'update', kind: 'task', id: task.id, revision: scheduled.revision, data: {
+    plannedStart: '2026-10-30T04:00:00.000Z', plannedEnd: '2026-10-31T04:00:00.000Z',
+  } });
+  assert.equal(Date.parse(moved.plannedStart) - Date.parse(scheduled.plannedStart), 12 * 3600000);
+  assert.equal(Date.parse(moved.plannedEnd) - Date.parse(moved.plannedStart), 24 * 3600000);
+  const resized = s.command({ action: 'update', kind: 'task', id: task.id, revision: moved.revision, data: {
+    plannedEnd: '2026-10-30T16:00:00.000Z',
+  } });
+  assert.equal(resized.plannedStart, moved.plannedStart);
+  assert.equal(Date.parse(resized.plannedEnd) - Date.parse(resized.plannedStart), 12 * 3600000);
+});
+
+test('timeline rescheduling locks submitted and ended tasks and validates editable dates', t => {
+  const { store: s } = fixture(t);
+  for (const state of ['defining', 'awaiting_acceptance', 'accepted', 'cancelled']) {
+    let task = create(s, 'task', { title: '排期任务', plannedStart: '2026-10-10T00:00:00Z', plannedEnd: '2026-10-12T00:00:00Z' });
+    if (state === 'cancelled') task = transition(s, task, 'cancelled');
+    if (['awaiting_acceptance', 'accepted'].includes(state)) task = submit(s, transition(s, transition(s, task, 'ready'), 'executing'));
+    if (state === 'accepted') task = review(s, task);
+    const before = task;
+    const update = (data, revision = task.revision) => s.command({ action: 'update', kind: 'task', id: task.id, revision, data });
+    const moved = { plannedStart: '2026-10-11T00:00:00Z', plannedEnd: '2026-10-13T00:00:00Z' };
+    if (state !== 'defining') {
+      assert.throws(() => update(moved), /退回/);
+      assert.throws(() => update({ plannedStart: null, plannedEnd: null }), /退回/);
+      assert.throws(() => update({ plannedStart: '2026-10-09T00:00:00Z' }), /退回/);
+      assert.throws(() => update({ plannedEnd: '2026-10-14T00:00:00Z' }), /退回/);
+      assert.deepEqual(s.get('task', task.id), before);
+      continue;
+    }
+    task = update(moved);
+    assert.equal(task.plannedStart, moved.plannedStart);
+    assert.equal(task.plannedEnd, moved.plannedEnd);
+    assert.throws(() => update(moved, before.revision), /数据已更新/);
+    task = update({ plannedStart: '2026-10-10T00:00:00Z' });
+    task = update({ plannedEnd: '2026-10-14T00:00:00Z' });
+    assert.equal(task.plannedStart, '2026-10-10T00:00:00Z');
+    assert.equal(task.plannedEnd, '2026-10-14T00:00:00Z');
+    assert.equal(task.revision, before.revision + 3);
+    assert.equal(task.state, before.state);
+    assert.deepEqual(task.review, before.review);
+    assert.deepEqual(task.delivery, before.delivery);
+    assert.throws(() => update({ plannedEnd: task.plannedStart }));
+    assert.throws(() => update({ plannedStart: null }));
+    assert.equal(s.get('task', task.id).revision, task.revision);
+    task = update({ plannedStart: null, plannedEnd: null });
+    assert.equal(task.plannedStart, null);
+    assert.equal(task.plannedEnd, null);
+    assert.equal(task.state, before.state);
+    assert.deepEqual(task.review, before.review);
+    assert.deepEqual(task.delivery, before.delivery);
+  }
+});
+
 test('hook-observed IDs, unique binding, Xinmo planning projection and Stop never submit or accept', t => {
   const { store: s, advance } = fixture(t); const sessionId = randomUUID();
   let task = create(s, 'task', { title: 'AI 任务', criteria: '完整交付' });

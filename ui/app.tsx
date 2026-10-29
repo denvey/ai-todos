@@ -1,10 +1,11 @@
+import { mergeTaskUpdates } from './task-updates.ts';
 import { I18nextProvider, useTranslation } from 'react-i18next';
 import { i18n, getLocale, applyHostLocale, getLanguagePreference, setLanguagePreference, languages, localizedError } from './i18n.ts';
 import type { LanguagePreference } from './i18n.ts';
 import type { TranslationKey, Locale } from '../src/i18n.ts';
 import type { ReactNode } from 'react';
 import type { Task, TaskDraft, Project, KeyResult, Plan, InboxItem, Entity, Kind, Snapshot, Settings as ReminderSettings, TaskEvent, DefinitionSuggestion, CaptureSuggestion, DefinitionField, Delivery as TaskDelivery, Session, CommandInput, TransitionState } from '../src/types.ts';
-import type { Modal, Decision, FocusOperation, RescheduleEdge, TaskCallbacks } from './types.ts';
+import type { Modal, Decision, FocusOperation, TaskCallbacks } from './types.ts';
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from '@modelcontextprotocol/ext-apps';
@@ -152,10 +153,11 @@ function Workspace() {
   const [statsDate, setStatsDate] = useState(localDay(new Date()));
   const receivedAt = useRef(Date.now()), snapshotRef = useRef<Snapshot>(null), refreshing = useRef<Promise<Snapshot> | null>(null), busyRef = useRef(false), modalRef = useRef<Modal | null>(null), toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), syncingThreads = useRef<Promise<SyncResult> | null>(null), lastThreadSync = useRef(0);
   modalRef.current = modal;
+  const scheduling = useRef(new Set<string>());
   const toast = (value: string) => { setMessage(value); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setMessage(''), 6000); };
   const refresh = async (force = false) => {
     if (refreshing.current) { if (!force) return refreshing.current; await refreshing.current.catch(() => {}); }
-    const pending = api('state').then(next => { csrf = next.csrf; receivedAt.current = Date.now(); snapshotRef.current = next; setSnapshot(next); setConnectionError(''); return next; });
+    const pending = api('state').then(next => { csrf = next.csrf; receivedAt.current = Date.now(); const merged = { ...next, tasks: mergeTaskUpdates(next.tasks, snapshotRef.current?.tasks ?? []) }; snapshotRef.current = merged; setSnapshot(merged); setConnectionError(''); return merged; });
     refreshing.current = pending;
     try { return await pending; } finally { if (refreshing.current === pending) refreshing.current = null; }
   };
@@ -179,11 +181,23 @@ function Workspace() {
   const deleteEntity = (kind: Kind, entity: Entity) => open({ type: 'delete', kind, entity, returnTo: modalRef.current?.returnTo });
   const focusOp = (operation: FocusOperation, taskId?: string) => run(async () => { if (operation === 'start' && !taskId) throw new Error(t("connection.selectFocus")); await mutate({ action: 'focus', operation, revision: snapshotRef.current!.focus.revision, ...(operation === 'start' ? { taskId } : {}) }); }, undefined, !!modalRef.current);
   const transition = (id: string, revision: number, state: TransitionState, close = false) => run(() => mutate({ action: 'transition', id, revision, state }), t("task.stateUpdated"), close);
-  const reschedule = (task: Task, days: number, edge?: RescheduleEdge) => run(async () => {
-    if (['accepted', 'awaiting_acceptance'].includes(task.state)) throw new Error(t("connection.rescheduleLocked"));
-    const start = Date.parse(task.plannedStart!) + (edge === 'end' ? 0 : days * 86400000), end = Date.parse(task.plannedEnd!) + (edge === 'start' ? 0 : days * 86400000);
-    await mutate({ action: 'update', kind: 'task', id: task.id, revision: task.revision, data: { plannedStart: new Date(start).toISOString(), plannedEnd: new Date(end).toISOString() } });
-  }, t("schedule.saved"));
+  const reschedule: TaskCallbacks['onReschedule'] = async (task, dates) => {
+    if (busyRef.current || scheduling.current.has(task.id)) return false;
+    scheduling.current.add(task.id);
+    try {
+      if (['accepted', 'awaiting_acceptance', 'cancelled'].includes(task.state)) throw new Error(t("connection.rescheduleLocked"));
+      const updated = await api('command', { action: 'update', kind: 'task', id: task.id, revision: task.revision, data: dates }) as Task;
+      const current = snapshotRef.current;
+      if (current) {
+        const next = { ...current, tasks: mergeTaskUpdates(current.tasks, [updated]) };
+        snapshotRef.current = next; setSnapshot(next);
+      }
+      return true;
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : String(reason));
+      return false;
+    } finally { scheduling.current.delete(task.id); }
+  };
   const review = (task: Task, decision: Decision = 'accept') => run(async () => {
     if (embedded) { await openLocal(task.id); toast(t("connection.reviewLocal")); return; }
     const detail = await api('review-ticket', { id: task.id, revision: task.revision });
