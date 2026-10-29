@@ -4,11 +4,12 @@ import { getLocale } from '../i18n.ts';
 import type { CSSProperties, DragEvent, PointerEvent } from 'react';
 import type { Task, Project, LiveSession } from '../../src/types.ts';
 import type { TaskCallbacks, RescheduleEdge } from '../types.ts';
-import { useRef, useState } from 'react';
-import { CalendarRange, ChevronDown, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CalendarRange, ChevronDown, ChevronLeft, ChevronRight, ListTodo, ExternalLink, Check, CheckCheck, LoaderCircle, Code2, Play } from 'lucide-react';
 import { fmt, labels, priorityLabels, runtimeLabel } from '../format.ts';
 import { runtimeState } from '../../src/runtime.ts';
 import { boardColumns, executionColumnForTask, executionColumnForSession as sessionColumn, taskStatus, taskNextStep, canConfirmAiSession, boardDropDecision } from '../execution-board.ts';
+import { tasksInTimelineWindow, tasksOutsideTimelineWindow, timelineAxisColumnWidths, timelineWindowForTasks } from '../timeline-window.ts';
 export { boardColumns, sessionColumn };
 
 export function AiBadge({ task }: { task: Pick<Task, 'ai' | 'sessionId'> }) {
@@ -35,8 +36,8 @@ export function ExecutionCard({ task, projects, busy, onOpenTask, onOpenSession,
     <div className="execution-card__primary execution-card__actions">
       <span className={`execution-status status-${column === 'completed' ? 'accepted' : task.state === 'awaiting_acceptance' ? task.state : task.ai ? runtimeState(task.ai.state) : task.state}`}>{status}</span>
       <div className="execution-card__buttons">
-        {next?.action !== 'session' && (task.sessionId || ['defining', 'ready', 'changes_requested'].includes(task.state)) && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><ExternalLink size={12} />{t("session.open")}</button>}
-        {next && <button type="button" disabled={busy} onClick={() => next.action === 'complete' && onCompleteTask ? onCompleteTask(task) : next.action === 'review' && onReviewTask ? onReviewTask(task) : next.action === 'session' && onOpenSession ? onOpenSession(task.sessionId!) : onOpenTask(task.id)}>{next.action === 'review' ? <ListTodo size={12} /> : next.action === 'session' ? <ExternalLink size={12} /> : <Check size={12} />}{t(next.label)}</button>}
+        {next?.action === 'complete' && task.sessionId && onOpenCodex && <button type="button" disabled={busy} onClick={() => onOpenCodex(task)}><ExternalLink size={12} />{t("session.open")}</button>}
+        {next && <button type="button" className={next.action === 'complete' ? undefined : 'is-next-action'} disabled={busy} onClick={() => next.action === 'start' && onOpenCodex ? onOpenCodex(task) : next.action === 'complete' && onCompleteTask ? onCompleteTask(task) : next.action === 'review' && onReviewTask ? onReviewTask(task) : next.action === 'session' && onOpenSession ? onOpenSession(task.sessionId!) : onOpenTask(task.id)}>{next.action === 'start' ? <Play size={12} /> : next.action === 'review' ? <ListTodo size={12} /> : next.action === 'session' ? <ExternalLink size={12} /> : <Check size={12} />}{t(next.label)}</button>}
       </div>
     </div>
     {(!task.sessionId || (task.ai && status !== runtimeLabel(task.ai))) && <div className="execution-card__badges"><AiBadge task={task} /></div>}
@@ -203,21 +204,40 @@ export function TimelineView({ tasks, projects, busy, onOpenTask, onOpenSession,
   const { t } = useTranslation();
   const [zoom, setZoom] = useState<'day' | 'week' | 'month'>('day');
   const todayAnchor = () => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - 3); return date.getTime(); };
-  const [anchor, setAnchor] = useState(todayAnchor);
   const scheduled = tasks.filter(task => task.plannedStart && task.state !== 'cancelled');
   const unscheduled = tasks.filter(task => !task.plannedStart && !['cancelled', 'accepted'].includes(task.state));
-  const dayWidth = { day: 60, week: 26, month: 10 }[zoom], days = { day: 45, week: 90, month: 180 }[zoom], step = { day: 1, week: 7, month: 30 }[zoom], width = dayWidth * days;
+  const scheduleKey = scheduled.map(task => `${task.id}:${task.plannedStart}:${task.plannedEnd}`).join('|');
+  const [anchor, setAnchor] = useState(() => timelineWindowForTasks(scheduled, 'day').anchor);
+  useEffect(() => { setAnchor(timelineWindowForTasks(scheduled, zoom).anchor); }, [scheduleKey]);
+  const days = timelineWindowForTasks(scheduled, zoom).days;
+  const dayWidth = { day: 60, week: 26, month: 10 }[zoom], step = { day: 1, week: 7, month: 30 }[zoom], width = dayWidth * days;
+  const axisColumns = timelineAxisColumnWidths(days, step, dayWidth);
+  const panDays = { day: 14, week: 56, month: 180 }[zoom];
+  const outside = tasksOutsideTimelineWindow(scheduled, anchor, days);
+  const visibleScheduled = tasksInTimelineWindow(scheduled, anchor, days);
+  const earlierTask = outside.earlier.sort((left, right) => Date.parse(right.plannedStart!) - Date.parse(left.plannedStart!))[0];
+  const laterTask = outside.later.sort((left, right) => Date.parse(left.plannedStart!) - Date.parse(right.plannedStart!))[0];
+  const moveAnchor = (offset: number) => setAnchor(current => {
+    const date = new Date(current);
+    date.setDate(date.getDate() + offset);
+    return date.getTime();
+  });
   return <div className="execution-timeline">
     <div className="timeline-toolbar"><span><CalendarRange size={15} />{t("timeline.window", { count: scheduled.length })}</span>
-      <div className="row"><button aria-label={t("timeline.backward")} onClick={() => setAnchor(value => value - 14 * 86400000)}>←</button><button onClick={() => setAnchor(todayAnchor())}>{t("time.today")}</button><button aria-label={t("timeline.forward")} onClick={() => setAnchor(value => value + 14 * 86400000)}>→</button>
+      {(outside.earlier.length > 0 || outside.later.length > 0) && <div className="timeline-window-actions" role="status">
+        <small>{t("timeline.outsideWindow", { before: outside.earlier.length, after: outside.later.length })}</small>
+        {earlierTask && <button type="button" onClick={() => setAnchor(timelineWindowForTasks([earlierTask], zoom).anchor)}>{t("timeline.earlierTasks", { count: outside.earlier.length })}<ChevronLeft size={13} /></button>}
+        {laterTask && <button type="button" onClick={() => setAnchor(timelineWindowForTasks([laterTask], zoom).anchor)}>{t("timeline.laterTasks", { count: outside.later.length })}<ChevronRight size={13} /></button>}
+      </div>}
+      <div className="row"><button aria-label={t("timeline.backward")} onClick={() => moveAnchor(-panDays)}>←</button><button onClick={() => setAnchor(todayAnchor())}>{t("time.today")}</button><button aria-label={t("timeline.forward")} onClick={() => moveAnchor(panDays)}>→</button>
         <div className="segmented-control timeline-zoom" aria-label={t("timeline.granularity")}>{([['day', t("timeline.day")], ['week', t("timeline.week")], ['month', t("timeline.month")]] as const).map(([value, label]) => <button key={value} className={zoom === value ? 'is-active' : ''} aria-pressed={zoom === value} onClick={() => setZoom(value)}>{label}</button>)}</div>
       </div>
     </div>
-    <div className="timeline-table"><div className="timeline-label-column"><div className="timeline-label-heading">{t("timeline.taskProject")}</div>{scheduled.map(task => <div className="timeline-task-label" key={task.id}><button className="quiet" onClick={() => onOpenTask(task.id)} title={task.title}>{task.title}</button><small>{projects.find(project => project.id === task.projectId)?.title || t("project.none")} · {t(labels[task.state])}</small></div>)}</div>
+    <div className="timeline-table"><div className="timeline-label-column"><div className="timeline-label-heading">{t("timeline.taskProject")}</div>{visibleScheduled.map(task => <div className="timeline-task-label" key={task.id}><button className="quiet" onClick={() => onOpenTask(task.id)} title={task.title}>{task.title}</button><small>{projects.find(project => project.id === task.projectId)?.title || t("project.none")} · {t(labels[task.state])}</small></div>)}</div>
       <div className="timeline-scroll" tabIndex={0} aria-label={t("timeline.axis")}><div className="timeline-canvas" style={{ width }}>
-        <div className="timeline-axis" style={{ gridTemplateColumns: `repeat(${Math.ceil(days / step)}, ${step * dayWidth}px)` }}>{Array.from({ length: Math.ceil(days / step) }, (_, index) => <span key={index}><strong>{new Date(anchor + index * step * 86400000).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' })}</strong></span>)}</div>
-        {scheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy} onOpenTask={onOpenTask} onReschedule={onReschedule} /></div>)}
-        {!scheduled.length && <p className="empty-state">{t("timeline.empty")}</p>}
+        <div className="timeline-axis" style={{ gridTemplateColumns: axisColumns.map(columnWidth => `${columnWidth}px`).join(' ') }}>{axisColumns.map((_, index) => <span key={index}><strong>{new Date(anchor + index * step * 86400000).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' })}</strong></span>)}</div>
+        {visibleScheduled.map(task => <div className="timeline-row" key={task.id} style={{ '--timeline-cell': `${dayWidth}px` } as CSSProperties}><TimelineBar task={task} anchor={anchor} dayWidth={dayWidth} width={width} busy={busy} onOpenTask={onOpenTask} onReschedule={onReschedule} /></div>)}
+        {!visibleScheduled.length && <p className="empty-state">{t("timeline.empty")}</p>}
       </div></div>
     </div>
     <section className="execution-unscheduled"><header><span><ListTodo size={15} /><strong>{t("schedule.unscheduled")}</strong></span><em>{unscheduled.length}</em></header><div>{unscheduled.map(task => <ExecutionCard key={task.id} task={task} projects={projects} busy={busy} onOpenTask={onOpenTask} onOpenSession={onOpenSession} onReviewTask={onReviewTask} onOpenCodex={onOpenCodex} onCompleteTask={onCompleteTask} />)}</div>{!unscheduled.length && <p>{t("timeline.allScheduled")}</p>}</section>

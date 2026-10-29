@@ -59,15 +59,22 @@ test('Xinmo task stages combine business state and runtime instead of leaving st
   assert.equal(taskStatus(task('cancelled', runtime('running'))), '已取消');
 });
 
-test('task next steps distinguish manual completion, session actions and delivery review', () => {
+test('task next steps prioritize starting work before manual completion, session actions and delivery review', () => {
   const stopped = runtime('idle');
   assert.equal(taskStatus(task('defining', { ...stopped, mode: 'planning', event: 'Stop' })), '待确认完成');
   assert.equal(taskStatus(task('ready', stopped)), '待确认完成');
   assert.equal(executionColumnForTask(task('ready', { ...stopped, event: 'Stop' })), 'waiting_user');
-  for (const [state, action] of Object.entries({ defining: 'complete', ready: 'complete', changes_requested: 'complete', executing: 'complete', awaiting_acceptance: 'review' })) {
+  for (const state of ['defining', 'ready', 'changes_requested']) {
+    assert.equal(taskNextStep(task(state)).action, 'start');
+    assert.equal(taskNextStep(task(state, stopped)).action, 'complete');
+  }
+  for (const [state, action] of Object.entries({ executing: 'complete', awaiting_acceptance: 'review' })) {
     assert.equal(taskNextStep(task(state, stopped)).action, action);
     assert.equal(taskNextStep(task(state)).action, action);
   }
+  assert.equal(taskNextStep(task('ready')).label, 'task.startWork');
+  assert.equal(taskNextStep(task('ready')).hint, 'task.nextStart');
+  assert.equal(taskNextStep(task('ready', stopped)).action, 'complete');
   for (const state of ['running', 'queued', 'waiting_input', 'waiting_approval', 'failed', 'interrupted']) {
     assert.equal(taskNextStep(task('executing', runtime(state))).action, 'session');
   }
