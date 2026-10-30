@@ -60,12 +60,15 @@ if (process.argv.includes('proxy')) {
   assert.equal(store.sessions().find(session => session.id === runningId).state, 'running');
   assert.equal(store.sessions().find(session => session.id === runningId).observedAt, new Date(now).toISOString());
   assert.equal(store.sessions().find(session => session.id === rolloutId).state, 'unknown');
+  // A terminal record can be older than the recent-thread window after a disconnect.
+  data.find(thread => thread.id === rolloutId).updatedAt = Math.floor(Date.now() / 1000) - 600;
   appendFileSync(join(dir, `${rolloutId}.jsonl`), JSON.stringify({ timestamp: new Date(now).toISOString(), type: 'event_msg', payload: { type: 'task_complete', turn_id: 'rollout-turn' } }) + '\n');
   await codexAction(store, { operation: 'sync_threads' });
   assert.equal(store.sessions().find(session => session.id === rolloutId).state, 'idle');
   assert.equal(store.sessions().find(session => session.id === rolloutId).confirmedAt, undefined);
   const stopped = store.sessions().find(session => session.id === rolloutId);
   store.confirmSession({ id: stopped.id, observedAt: stopped.observedAt, event: stopped.event, turnId: stopped.turnId, catalogUpdatedAt: stopped.catalogUpdatedAt, confirmed: true });
+  data.find(thread => thread.id === rolloutId).updatedAt = Math.floor(Date.now() / 1000);
   appendFileSync(join(dir, `${rolloutId}.jsonl`), ['task_started', 'task_complete'].map(type => JSON.stringify({ timestamp: new Date(now).toISOString(), type: 'event_msg', payload: { type, turn_id: 'new-rollout-turn' } })).join('\n') + '\n');
   await codexAction(store, { operation: 'sync_threads' });
   assert.equal(store.sessions().find(session => session.id === rolloutId).confirmedAt, undefined);

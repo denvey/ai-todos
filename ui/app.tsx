@@ -25,7 +25,7 @@ import './refinement.css';
 
 const localOrigin = '__AI_TODOS_ORIGIN__';
 const embedded = window.parent !== window;
-const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, { availableDisplayModes: ['inline', 'fullscreen'] }, { autoResize: true }) : null;
+const bridge = embedded ? new App({ name: 'ai-todos', version: '0.1.10' }, { availableDisplayModes: ['inline', 'fullscreen'] }, { autoResize: false }) : null;
 const mainPages = { today: 'nav.today', work: 'nav.work', projects: 'nav.projects', okr: 'nav.okr' } as const;
 const pages: Record<string, TranslationKey> = { ...mainPages, inbox: 'nav.inbox', plans: 'nav.plans', settings: 'nav.settings' };
 const singular: Record<string, TranslationKey> = { task: 'entity.task', project: 'entity.project', objective: 'entity.objective', keyResult: 'entity.keyResult', plan: 'entity.plan' };
@@ -152,12 +152,19 @@ function Workspace() {
   const [focusTaskId, setFocusTaskId] = useState('');
   const [statsDate, setStatsDate] = useState(localDay(new Date()));
   const receivedAt = useRef(Date.now()), snapshotRef = useRef<Snapshot>(null), refreshing = useRef<Promise<Snapshot> | null>(null), busyRef = useRef(false), modalRef = useRef<Modal | null>(null), toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), syncingThreads = useRef<Promise<SyncResult> | null>(null), lastThreadSync = useRef(0);
+  const mounted = useRef(false);
   modalRef.current = modal;
   const scheduling = useRef(new Set<string>());
-  const toast = (value: string) => { setMessage(value); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setMessage(''), 6000); };
+  const toast = (value: string) => { if (!mounted.current) return; setMessage(value); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setMessage(''), 6000); };
   const refresh = async (force = false) => {
-    if (refreshing.current) { if (!force) return refreshing.current; await refreshing.current.catch(() => {}); }
-    const pending = api('state').then(next => { csrf = next.csrf; receivedAt.current = Date.now(); const merged = { ...next, tasks: mergeTaskUpdates(next.tasks, snapshotRef.current?.tasks ?? []) }; snapshotRef.current = merged; setSnapshot(merged); setConnectionError(''); return merged; });
+    if (refreshing.current) {
+      const previous = refreshing.current;
+      if (!force) return previous;
+      await previous.catch(() => {});
+      if (refreshing.current && refreshing.current !== previous) return refreshing.current;
+    }
+    if (!mounted.current) throw new DOMException('Workspace closed', 'AbortError');
+    const pending = api('state').then(next => { if (!mounted.current) return next; csrf = next.csrf; receivedAt.current = Date.now(); const merged = { ...next, tasks: mergeTaskUpdates(next.tasks, snapshotRef.current?.tasks ?? []) }; snapshotRef.current = merged; setSnapshot(merged); setConnectionError(''); return merged; });
     refreshing.current = pending;
     try { return await pending; } finally { if (refreshing.current === pending) refreshing.current = null; }
   };
@@ -220,7 +227,7 @@ function Workspace() {
   const syncThreads = async () => {
     if (syncingThreads.current) return syncingThreads.current;
     const pending = api('codex', { operation: 'sync_threads' }); syncingThreads.current = pending;
-    try { const result = await pending; setThreadTransport(result.transport ?? null); lastThreadSync.current = Date.now(); await refresh(true); return result; }
+    try { const result = await pending; if (mounted.current) { setThreadTransport(result.transport ?? null); lastThreadSync.current = Date.now(); await refresh(true); } return result; }
     finally { if (syncingThreads.current === pending) syncingThreads.current = null; }
   };
   const syncWorkspace = () => run(async () => {
@@ -260,9 +267,26 @@ function Workspace() {
   }, t('task.completedByUser'), true);
 
   useEffect(() => {
+    if (snapshot?.focus.status !== 'running') return;
+    const timer = setInterval(() => setTick(value => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [snapshot?.focus.status]);
+
+  useEffect(() => {
+    mounted.current = true;
     let stopped = false;
-    let poll: ReturnType<typeof setInterval> | undefined, timer: ReturnType<typeof setInterval> | undefined;
+    let poll: ReturnType<typeof setTimeout> | undefined;
+    let stopResizeNotifications: (() => void) | undefined;
     let notified = new Set();
+    const pollState = async () => {
+      try {
+        if (Date.now() - lastThreadSync.current > 30000) { lastThreadSync.current = Date.now(); try { await syncThreads(); } catch (reason) { toast(t("session.syncFailed", { value: (reason instanceof Error ? reason.message : String(reason)) })); } }
+        if (stopped) return;
+        const next = await refresh();
+        if (!stopped && !embedded && 'Notification' in window && Notification.permission === 'granted') next.notices.filter(notice => !notice.read && !notified.has(notice.id)).forEach(notice => { new Notification('ai-todos', { body: noticeTitle(notice) }); notified.add(notice.id); });
+      } catch (reason) { if (!stopped) setConnectionError((reason instanceof Error ? reason.message : String(reason))); }
+      finally { if (!stopped) poll = setTimeout(pollState, 5000); }
+    };
     const boot = async () => {
       try {
         if (embedded) {
@@ -273,27 +297,31 @@ function Workspace() {
           };
           bridge!.onhostcontextchanged = applyHostContext;
           bridge!.ontoolresult = result => { if (result.structuredContent && typeof result.structuredContent === 'object' && 'tasks' in result.structuredContent) refresh(true).catch(reason => toast((reason instanceof Error ? reason.message : String(reason)))); };
-          await bridge!.connect(); applyHostContext(bridge!.getHostContext());
+          await bridge!.connect();
+          if (stopped) return;
+          stopResizeNotifications = bridge!.setupSizeChangedNotifications();
+          applyHostContext(bridge!.getHostContext());
         }
         if (stopped) return;
         const next = await refresh(true); notified = new Set(next.notices.map(notice => notice.id));
+        if (stopped) return;
         try { await api('codex', { operation: 'sync_projects' }); if (!stopped) await refresh(true); }
         catch (reason) { if (!stopped) toast(t("project.syncFailed", { value: (reason instanceof Error ? reason.message : String(reason)) })); }
+        if (stopped) return;
         try { await syncThreads(); } catch (reason) { if (!stopped) toast(t("session.syncFailed", { value: (reason instanceof Error ? reason.message : String(reason)) })); }
+        if (stopped) return;
         const id = location.hash.match(/^#task=([a-f0-9-]+)$/)?.[1]; if (id) await openTask(id);
-      } catch (reason) { setConnectionError((reason instanceof Error ? reason.message : String(reason))); }
+      } catch (reason) { if (!stopped) setConnectionError((reason instanceof Error ? reason.message : String(reason))); }
       if (stopped) return;
-      timer = setInterval(() => setTick(value => value + 1), 1000);
-      poll = setInterval(async () => {
-        try {
-          if (Date.now() - lastThreadSync.current > 30000) { lastThreadSync.current = Date.now(); try { await syncThreads(); } catch (reason) { toast(t("session.syncFailed", { value: (reason instanceof Error ? reason.message : String(reason)) })); } }
-          const next = await refresh();
-          if (!embedded && 'Notification' in window && Notification.permission === 'granted') next.notices.filter(notice => !notice.read && !notified.has(notice.id)).forEach(notice => { new Notification('ai-todos', { body: noticeTitle(notice) }); notified.add(notice.id); });
-        } catch (reason) { setConnectionError((reason instanceof Error ? reason.message : String(reason))); }
-      }, 5000);
+      poll = setTimeout(pollState, 5000);
     };
     boot();
-    return () => { stopped = true; clearInterval(timer); clearInterval(poll); clearTimeout(toastTimer.current); };
+    return () => {
+      stopped = true; mounted.current = false;
+      clearTimeout(poll); clearTimeout(toastTimer.current);
+      stopResizeNotifications?.();
+      if (bridge) { bridge.ontoolresult = undefined; bridge.onhostcontextchanged = undefined; void bridge.close().catch(() => {}); }
+    };
   }, []);
 
   if (!snapshot) return <div className="loading"><h1>{connectionError ? t("connection.disconnected") : t("connection.connecting")}</h1>{connectionError && <><p>{connectionError}</p><p>{t("connection.localApp")}<a href={localOrigin}>{localOrigin}</a></p></>}</div>;

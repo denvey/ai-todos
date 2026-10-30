@@ -25,7 +25,7 @@ test('all Xinmo runtime states and planning labels retain their board meaning', 
   const expected = {
     queued: ['等待执行', 'executing'], running: ['正在执行', 'executing'],
     waiting_approval: ['等待审批', 'waiting_user'], waiting_input: ['等待输入', 'waiting_user'],
-    interrupted: ['已中断', null], failed: ['执行失败', 'waiting_user'],
+    interrupted: ['已中断', 'waiting_user'], failed: ['执行失败', 'waiting_user'],
     completed: ['待确定', 'waiting_user'], idle: ['待确定', 'waiting_user'], unknown: ['状态未确认', null],
   };
   assert.deepEqual(Object.keys(runtimeLabels), Object.keys(expected));
@@ -42,6 +42,17 @@ test('all Xinmo runtime states and planning labels retain their board meaning', 
   assert.equal(codexRuntimeState({ type: 'active', activeFlags: ['waitingOnApproval'] }), 'waiting_approval');
   assert.equal(codexRuntimeState({ type: 'systemError' }), 'failed');
   assert.equal(codexRuntimeState({ type: 'notLoaded' }), 'unknown');
+});
+
+test('stale active sessions remain visible without being eligible for completion', () => {
+  for (const observedState of ['queued', 'running', 'waiting_approval', 'waiting_input']) {
+    const session = { ...runtime('unknown'), observedState };
+    assert.equal(executionColumnForSession(session), 'waiting_user');
+    assert.equal(runtimeLabel(session), '状态未确认');
+    assert.equal(canConfirmAiSession(session, []), false);
+  }
+  assert.equal(executionColumnForSession({ ...runtime('unknown'), observedState: 'unknown' }), null);
+  assert.equal(canConfirmAiSession(runtime('interrupted'), []), false);
 });
 
 test('Xinmo task stages combine business state and runtime instead of leaving stopped work executing', () => {
