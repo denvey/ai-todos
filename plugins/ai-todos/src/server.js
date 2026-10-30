@@ -27588,8 +27588,8 @@ async function listProjects() {
     return projects;
   }, 15e3);
 }
-async function rolloutObservation(thread) {
-  if (thread.status.type !== "notLoaded" || !thread.path || Date.now() - thread.updatedAt * 1e3 > 3e5) return;
+async function rolloutObservation(thread, trackedActive) {
+  if (thread.status.type !== "notLoaded" || !thread.path || !trackedActive && Date.now() - thread.updatedAt * 1e3 > 3e5) return;
   const input2 = createReadStream(thread.path), lines = createInterface({ input: input2, crlfDelay: Infinity });
   let matched = false, latestAt = "", observation;
   try {
@@ -27618,7 +27618,8 @@ async function rolloutObservation(thread) {
     input2.destroy();
   }
 }
-async function listThreads() {
+async function listThreads(store2) {
+  const trackedActive = new Set(store2.sessions().filter((session) => ["queued", "running", "waiting_approval", "waiting_input"].includes(session.observedState)).map((session) => session.id));
   const read = async ({ request }) => {
     const threads = [], cursors = /* @__PURE__ */ new Set();
     let cursor = null;
@@ -27629,7 +27630,7 @@ async function listThreads() {
         const requestIndex = thread.preview.startsWith("# Files mentioned by the user:") ? thread.preview.indexOf("## My request:") : -1;
         const preview = (requestIndex >= 0 ? thread.preview.slice(requestIndex + "## My request:".length) : thread.preview).trim();
         const title = (thread.name?.trim() || preview.replace(/\s+/g, " ") || `Codex \xB7 ${basename(thread.cwd)} \xB7 ${thread.id.slice(-8)}`).slice(0, 300);
-        const observation = await rolloutObservation(thread);
+        const observation = await rolloutObservation(thread, trackedActive.has(thread.id));
         const state = observation?.state ?? codexRuntimeState(thread.status);
         threads.push({ id: thread.id, title, preview: preview.slice(0, 2e4), cwd: normalize(thread.cwd), projectId: thread.projectId ?? null, updatedAt: new Date(thread.updatedAt * 1e3).toISOString(), state, ...observation ? { observation } : {} });
       }
@@ -27691,7 +27692,7 @@ async function codexAction(store2, raw) {
   if (input2.operation === "open_session") return openSession(store2, input2.id, input2.prefillTask, input2.locale);
   if (input2.operation === "sync_projects") return store2.syncCodexProjects(await listProjects());
   if (input2.operation === "sync_threads") {
-    const result = await listThreads();
+    const result = await listThreads(store2);
     return { ...store2.syncCodexThreads(result.threads), transport: result.transport };
   }
   const project = input2.draft.projectId ? store2.get("project", input2.draft.projectId) : null;
@@ -27703,7 +27704,7 @@ async function codexAction(store2, raw) {
 // package.json
 var package_default = {
   name: "ai-todos",
-  version: "0.1.19",
+  version: "0.1.20",
   private: true,
   type: "module",
   description: "Standalone local Codex productivity plugin",
